@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Daydreamin — Your personal cinematic music streaming experience">
+<title>Daydreamin</title>
+<link rel="shortcut icon" href="/logo-icon.png" type="image/png">
+<link rel="icon" type="image/png" href="/logo-icon.png">
+<link rel="apple-touch-icon" href="/logo-icon.png">
+<link rel="manifest" href="/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/animations.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/player.css">
+<link rel="stylesheet" href="css/mobile.css">
+<link rel="stylesheet" href="css/desktop.css">
+</head>
+<body>
+<div id="ambient-artwork-container">
+  <div id="ambient-bg-1" class="ambient-bg"></div>
+  <div id="ambient-bg-2" class="ambient-bg"></div>
+</div>
+<div id="glow"></div>
+<div id="glow2"></div>
+<div id="glow3"></div>
+
+<!-- SETTINGS MODAL -->
+<div id="settings" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-sheet">
+    <div class="sheet-handle"></div>
+    <h3>Settings</h3>
+    <div class="s-label">Backend URL</div>
+    <input class="s-input" id="url-input" type="url" placeholder="http://192.168.x.x:499">
+    <div class="s-option-row" style="display:flex; justify-content:space-between; align-items:center; margin: 15px 0 15px;">
+      <span class="s-label" style="margin:0;">Autoplay Recommendations</span>
+      <label class="switch">
+        <input type="checkbox" id="autoplay-input">
+        <span class="switch-slider"></span>
+      </label>
+    </div>
+    <div class="s-option-row" style="display:flex; justify-content:space-between; align-items:center; margin: 0 0 20px;">
+      <span class="s-label" style="margin:0;">Autoplay after Playlists</span>
+      <label class="switch">
+        <input type="checkbox" id="autoplay-playlists-input">
+        <span class="switch-slider"></span>
+      </label>
+    </div>
+    <button class="s-save" onclick="saveSettings()">Save & Connect</button>
+  </div>
+</div>
+
+<!-- CREATE PLAYLIST MODAL -->
+<div id="create-pl-modal" onclick="if(event.target===this)closeCreatePlaylist()">
+  <div class="settings-sheet">
+    <div class="sheet-handle"></div>
+    <h3>New Playlist</h3>
+    <div class="s-label">Playlist Name</div>
+    <input class="s-input" id="pl-name-input" type="text" placeholder="My awesome playlist" maxlength="50" onkeydown="if(event.key==='Enter')confirmCreatePlaylist()">
+    <button class="s-save" onclick="confirmCreatePlaylist()">Create Playlist</button>
+  </div>
+</div>
+
+<!-- SONG ACTION SHEET -->
+<div id="action-sheet" onclick="if(event.target===this)closeActions()">
+  <div class="action-sheet-inner">
+    <div class="sheet-handle"></div>
+    <div class="action-song-preview" id="action-preview"></div>
+    <div class="action-list" id="action-list"></div>
+    <button class="action-cancel" onclick="closeActions()">Cancel</button>
+  </div>
+</div>
+
+<!-- MOBILE BRAND HEADER -->
+<div class="mobile-brand" onclick="switchTab('home')">
+  <img class="mobile-brand-logo" src="logo-icon.png" alt="Daydreamin Logo">
+  <span class="mobile-brand-name">Daydreamin</span>
+</div>
+
+<!-- GEAR BUTTON -->
+<button class="gear-btn mobile-gear-btn" id="gear-btn-mobile" onclick="openSettings()" aria-label="Settings">
+  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+</button>
+
+<!-- KEYBOARD SHORTCUTS MODAL -->
+<div id="shortcuts-modal" onclick="if(event.target===this)closeShortcuts()">
+  <div class="shortcuts-sheet">
+    <div class="sheet-handle"></div>
+    <h3>Keyboard Shortcuts</h3>
+    <div class="shortcuts-grid">
+      <div class="shortcut-row"><kbd>Space</kbd><span>Play / Pause</span></div>
+      <div class="shortcut-row"><kbd>Shift + →</kbd><span>Next Song</span></div>
+      <div class="shortcut-row"><kbd>Shift + ←</kbd><span>Previous Song</span></div>
+      <div class="shortcut-row"><kbd>→</kbd><span>Skip forward 10s</span></div>
+      <div class="shortcut-row"><kbd>←</kbd><span>Skip back 10s</span></div>
+      <div class="shortcut-row"><kbd>↑ / ↓</kbd><span>Volume</span></div>
+      <div class="shortcut-row"><kbd>M</kbd><span>Mute / Unmute</span></div>
+      <div class="shortcut-row"><kbd>S</kbd><span>Toggle Shuffle</span></div>
+      <div class="shortcut-row"><kbd>R</kbd><span>Toggle Repeat</span></div>
+      <div class="shortcut-row"><kbd>L</kbd><span>Like / Unlike Song</span></div>
+      <div class="shortcut-row"><kbd>?</kbd><span>Show this help</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="desktop-grid">
+
+  <!-- ── BOTTOM NAV / SIDEBAR ── -->
+  <div id="nav">
+    <!-- Brand header (desktop sidebar) -->
+    <div class="nav-brand" onclick="switchTab('home')" style="cursor: pointer;">
+      <img class="nav-brand-logo" src="logo-icon.png" alt="Daydreamin Logo">
+      <div class="nav-brand-name">Daydreamin</div>
+    </div>
+
+    <div class="nav-section-label">Menu</div>
+
+    <div class="nav-btn active" id="nb-home" onclick="switchTab('home')">
+      <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+      <span>Home</span>
+    </div>
+    <div class="nav-btn" id="nb-search" onclick="switchTab('search')">
+      <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <span>Search</span>
+    </div>
+    <div class="nav-btn" id="nb-library" onclick="switchTab('library')">
+      <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      <span>Library</span>
+    </div>
+    <div class="nav-btn" id="nb-queue" onclick="switchTab('queue')">
+      <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      <span>Queue</span>
+    </div>
+    <div class="nav-btn" id="nb-lyrics" onclick="switchTab('lyrics')">
+      <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span>Lyrics</span>
+    </div>
+
+    <div id="nav-playlists"></div>
+
+    <!-- DESKTOP GEAR BUTTON (Sidebar) -->
+    <button class="gear-btn desktop-gear-btn" id="gear-btn" onclick="openSettings()" aria-label="Settings">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </div>
+
+<div id="app">
+  <!-- ── HOME ── -->
+  <div class="screen active" id="s-home">
+    <div class="home-hero">
+      <div class="screen-header">
+        <div class="screen-sub" id="g-sub">What are we listening to?</div>
+        <div class="screen-title" id="g-title">Good evening.</div>
+      </div>
+    </div>
+  
+    <div class="home-content">
+      <div class="feed-section" id="sec-recent" style="display:none;">
+        <div class="section-label-row">
+          <div class="section-label">Recently Played</div>
+        </div>
+        <div class="scroll-row" id="recent-row"></div>
+      </div>
+
+      <div class="feed-section" id="sec-playlists" style="display:none;">
+        <div class="section-label-row">
+          <div class="section-label">📋 Your Playlists</div>
+        </div>
+        <div class="scroll-row" id="playlists-row"></div>
+      </div>
+  
+      <div class="feed-section" id="sec-quick" style="display:none;">
+        <div class="section-label-row">
+          <div class="section-label">Quick Picks</div>
+        </div>
+        <div class="scroll-row" id="quick-row">
+          <div class="loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        </div>
+      </div>
+      
+      <div class="feed-section" id="sec-because" style="display:none;">
+        <div class="section-label-row">
+          <div class="section-label" id="because-lbl">Recommended For You</div>
+        </div>
+        <div class="scroll-row" id="because-row"></div>
+      </div>
+
+      <div class="feed-section" id="sec-mix" style="display:none;">
+        <div class="section-label-row">
+          <div class="section-label" id="mix-lbl">Your Mix</div>
+        </div>
+        <div class="scroll-row" id="mix-row"></div>
+      </div>
+
+      <div class="feed-section" id="sec-discover" style="display:none;">
+        <div class="section-label-row">
+          <div class="section-label">✨ Discover</div>
+        </div>
+        <div class="song-list" id="discover-list">
+          <div class="loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SEARCH ── -->
+  <div class="screen" id="s-search">
+    <div class="search-wrap" id="search-input-container">
+      <div class="search-box">
+        <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input class="search-input" id="search-input" type="search" placeholder="Songs, artists, or lyrics…" autocomplete="off" autocorrect="off">
+        <div class="search-loading-dots" id="search-loading-dots" style="display: none;">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+        <button class="search-clear" id="search-clear" onclick="clearSearch()">✕</button>
+      </div>
+      <div class="search-hint" id="search-hint">Tip: Paste song lyrics to find a song</div>
+    </div>
+    <div id="search-results">
+      <div class="empty"><div class="ico">🎵</div><p>Search any song, artist, or lyrics</p></div>
+    </div>
+    <div id="search-feed-view" style="display: none;"></div>
+  </div>
+
+  <!-- ── LIBRARY ── -->
+  <div class="screen" id="s-library">
+    <div id="library-view"></div>
+  </div>
+
+  <!-- ── QUEUE ── -->
+  <div class="screen" id="s-queue">
+    <div id="queue-wrapper">
+      <div class="screen-header">
+        <div class="screen-sub">Coming up</div>
+        <div class="screen-title">Queue</div>
+      </div>
+      <div id="q-now"></div>
+      <div class="section-label">Up Next</div>
+      <div class="song-list" id="queue-list">
+        <div class="empty"><div class="ico">📋</div><p>Play a song to see what's next</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── LYRICS ── -->
+  <div class="screen" id="s-lyrics">
+    <div id="lyrics-wrapper">
+      <div class="screen-header">
+        <div class="screen-sub" id="lyr-artist">—</div>
+        <div class="screen-title" id="lyr-title">Lyrics</div>
+      </div>
+      <div id="lyric-bg" class="lyric-bg"></div>
+      <div class="lyric-controls">
+        <div class="lyric-controls-left">
+          <button class="lyric-btn" id="lyrics-mode-btn" onclick="toggleLyricsMode()" title="Toggle synced/plain lyrics">synced</button>
+        </div>
+        <div class="lyric-controls-right">
+          <div class="sync-delay-control">
+            <button class="sync-btn" onclick="adjustSyncDelay(-0.1)" title="Decrease sync delay">−</button>
+            <span class="sync-display" id="sync-display">0s</span>
+            <button class="sync-btn" onclick="adjustSyncDelay(0.1)" title="Increase sync delay">+</button>
+          </div>
+          <button class="lyric-btn fullscreen-btn" id="lyrics-fullscreen-btn" onclick="toggleLyricsFullscreen()" title="Fullscreen lyrics">⛶</button>
+        </div>
+      </div>
+      <div class="lyric-body" id="lyric-body">
+        <div class="empty"><div class="ico">🎤</div><p>Play a song to see lyrics</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MINI PLAYER ── -->
+  <div id="mini" onclick="openPlayer()">
+    <img class="mini-art" id="m-art" src="" alt="">
+    <div class="mini-info">
+      <div class="mini-title" id="m-title">—</div>
+      <div class="mini-artist" id="m-artist">—</div>
+    </div>
+    <div class="mini-btns" onclick="event.stopPropagation()">
+      <div class="mini-btn" onclick="prevSong()">
+        <svg width="19" height="19" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+      </div>
+      <div class="mini-btn" onclick="togglePlay()">
+        <svg id="m-play-ico" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </div>
+      <div class="mini-btn" onclick="nextSong()">
+        <svg width="19" height="19" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </div>
+    </div>
+    <div class="mini-progress"><div class="mini-bar" id="m-bar"></div></div>
+  </div>
+
+  <!-- ── CINEMATIC VIEW ── -->
+  <div class="screen" id="s-cinematic">
+    <div id="cine-bg" class="cine-bg"></div>
+    <div class="cine-content">
+      <img id="cine-art" class="cine-art" src="" alt="">
+    </div>
+  </div>
+
+</div> <!-- closing app -->
+
+<!-- ── DESKTOP RIGHT PANEL ── -->
+<div id="desktop-right-panel">
+  <div class="rp-tabs">
+    <div class="rp-tab active" id="rpt-queue"   onclick="switchRpTab('queue')">Up Next</div>
+    <div class="rp-tab"        id="rpt-lyrics"  onclick="switchRpTab('lyrics')">Lyrics</div>
+    <div class="rp-tab"        id="rpt-related" onclick="switchRpTab('related')">Related</div>
+  </div>
+  <div id="rp-content" class="rp-content"></div>
+</div>
+
+<!-- ── FULL PLAYER ── -->
+<div id="player">
+  <div class="player-handle"></div>
+  <div class="player-topbar">
+    <div class="player-back" onclick="closePlayer()">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15,18 9,12 15,6"/></svg>
+    </div>
+    <div class="player-lbl">Now Playing</div>
+    <div style="display: flex; align-items: center; gap: 4px;">
+      <div class="player-extra" onclick="toggleLike()" id="p-heart">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </div>
+      <div class="player-extra" onclick="if(S.song)openSongActions(S.song)" id="p-menu" style="font-size: 1.35rem;" title="More options">
+        &#8942;
+      </div>
+    </div>
+  </div>
+
+  <!-- Left Column: Art + Info -->
+  <div class="player-left-col">
+    <div class="art-wrap">
+      <div class="art-glow" id="art-glow"></div>
+      <img class="player-art" id="p-art" src="" alt="">
+    </div>
+
+    <div class="player-meta">
+      <div class="player-text">
+        <div class="player-song" id="p-title">—</div>
+        <div class="player-artist" id="p-artist">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls + Progress grouped together (Spotify layout) -->
+  <div class="main-ctrls" id="player-main-ctrls">
+    <div class="controls-row">
+      <div class="c-btn c-sm" id="shuffle-btn" onclick="toggleShuffle()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16,3 21,3 21,8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21,16 21,21 16,21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+      </div>
+      <div class="c-btn c-prev" onclick="prevSong()">
+        <svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+      </div>
+      <div class="c-btn c-play" onclick="togglePlay()" id="play-btn">
+        <svg id="p-play-ico" width="32" height="32" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </div>
+      <div class="c-btn c-next" onclick="nextSong()">
+        <svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </div>
+      <div class="c-btn c-sm" id="repeat-btn" onclick="toggleRepeat()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="17,1 21,5 17,9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7,23 3,19 7,15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </div>
+    </div>
+    <div class="prog-wrap">
+      <span id="t-cur" class="prog-time">0:00</span>
+      <div class="prog-track" id="prog-track">
+        <div class="prog-fill" id="prog-fill"></div>
+        <div class="prog-thumb" id="prog-thumb"></div>
+      </div>
+      <span id="t-tot" class="prog-time">0:00</span>
+    </div>
+  </div>
+
+  <!-- Volume -->
+  <div class="vol-wrap" id="vol-wrap">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
+    <input type="range" class="vol-slider" id="vol-slider" min="0" max="100" value="100">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+  </div>
+
+  <div id="desktop-player-extras"></div>
+</div>
+
+</div> <!-- closing desktop-grid -->
+
+<div id="toast"></div>
+
+<script src="js/state.js"></script>
+<script src="js/app.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/lyrics.js"></script>
+<script src="js/queue.js"></script>
+<script src="js/player.js"></script>
+<script src="js/library.js"></script>
+<script src="js/search.js"></script>
+</body>
+</html>

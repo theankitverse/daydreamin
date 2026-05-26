@@ -1,0 +1,41 @@
+# === macOS ===
+.DS_Store
+*.swp
+*~
+
+# === Xcode ===
+build/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# === Python Server ===
+Server/venv/
+Server/__pycache__/
+Server/*.pyc
+Server/**/*.pyc
+Server/**/__pycache__/
+Server/data/*
+!Server/data/songs.json
+!Server/data/tally_counter.json
+Server/data/pymusic.db
+Server/song_cache/
+Server/.env
+
+# === General ===
+*.log
+.env
+learn.md
+temp_chunk.txt
+
+# === Vercel ===
+.vercel/
+node_modules/
+
+# === Windows ===
+Thumbs.db
+desktop.ini

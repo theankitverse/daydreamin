@@ -1,0 +1,18 @@
+{
+  "name": "Daydreamin",
+  "short_name": "Daydreamin",
+  "description": "Your personal cinematic music experience",
+  "start_url": "/app",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23060A08' width='100' height='100' rx='20'/><text x='50' y='62' text-anchor='middle' font-size='50'>🎵</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
