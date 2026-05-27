@@ -325,9 +325,10 @@ def _resolve_stream(query: str, video_id: str = None):
         "noplaylist": True,
         "check_formats": False,  # Bypass checking if format links are alive to save network roundtrips
         "socket_timeout": 10,     # Abort if YouTube hangs the connection (relaxed to 10s for slow DNS/handshakes on HF)
+        "impersonate": "chrome",  # Impersonate Chrome browser TLS signature to bypass bot detection
         "extractor_args": {
             "youtube": {
-                "client": ["ios", "android", "tv", "web_embedded", "mweb"]
+                "player_client": ["web", "mweb", "android"]
             }
         },
     }
@@ -1484,7 +1485,13 @@ def test_ytdlp():
             "quiet": True,
             "noplaylist": True,
             "check_formats": False,
-            "socket_timeout": 5,
+            "socket_timeout": 10,
+            "impersonate": "chrome",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "mweb", "android"]
+                }
+            },
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
@@ -1504,7 +1511,13 @@ def test_ytdlp_search():
             "quiet": True,
             "noplaylist": True,
             "check_formats": False,
-            "socket_timeout": 5,
+            "socket_timeout": 10,
+            "impersonate": "chrome",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "mweb", "android"]
+                }
+            },
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info("ytsearch1:Anirudh Ravichander Raga of Revenge", download=False)
