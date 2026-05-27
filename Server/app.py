@@ -324,6 +324,7 @@ def _resolve_stream(query: str, video_id: str = None):
         "quiet": True,
         "noplaylist": True,
         "check_formats": False,  # Bypass checking if format links are alive to save network roundtrips
+        "socket_timeout": 5,     # Abort quickly if YouTube hangs the connection
         "extractor_args": {
             "youtube": {
                 "client": ["ios", "android"]
@@ -363,6 +364,13 @@ def render_play_response(request: Request, song_id: str, artist: str, title: str
     if filepath.exists():
         base_url = str(request.base_url).rstrip("/")
         return JSONResponse({"source": "local", "url": f"{base_url}/api/mobile/stream_cache/{filename}", "videoId": video_id})
+
+    # Resolve video_id via YTMusic API if not provided (much faster and avoids yt-dlp search blocks)
+    if not video_id:
+        try:
+            video_id = ytmusic_service.resolve_video_id(artist, title) or ""
+        except Exception as e:
+            logger.warning("Failed to resolve video_id via YTMusic: %s", e)
 
     # Format a clean search query for yt-dlp to find the official audio/video
     clean_title = title.lower()
