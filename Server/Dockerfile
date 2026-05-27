@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app.py .
 COPY ytmusic_service.py .
+COPY cookies.txt .
 COPY recommendation/ recommendation/
 
 # Create data and cache directories with proper permissions

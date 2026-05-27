@@ -59,9 +59,8 @@ function getDefaultBackendUrl() {
   if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
     return 'http://127.0.0.1:499';
   }
-  // Production: point to your Hugging Face Space backend
-  // Update this URL after deploying your backend
-  return 'https://daydreaminn-daydreamin-server.hf.space';
+  // Production: point to your Cloudflare Tunnel backend
+  return 'https://fixed-epson-indicates-updated.trycloudflare.com';
 }
 
 // Auto-migration: if in production (Vercel) but local storage has localhost URL, clear it!

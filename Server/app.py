@@ -34,6 +34,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Daydreamin", version="3.0")
+
+
 # ── CORS (single, clean setup) ─────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +47,7 @@ app.add_middleware(
 
 # ── Paths ───────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
+COOKIE_FILE = BASE_DIR / "cookies.txt"
 DATA_DIR = BASE_DIR / "data"
 CACHE_DIR = BASE_DIR / "song_cache"
 CACHE_LIMIT_BYTES = 600 * 1024 * 1024
@@ -311,14 +314,19 @@ def _evict_stream_cache():
 def _resolve_stream(query: str, video_id: str = None):
     """
     Resolve a stream URL via yt-dlp.
-    If video_id is provided, use it directly (faster + more accurate).
-    Otherwise search YouTube.
+    Uses the same proven settings as test_ytdlp_search (web+mweb+android + chrome impersonation).
+    Tries direct video URL first (if video_id provided), then falls back to ytsearch.
+    Socket timeout kept at 10s per attempt (max ~20s total) to avoid HF Spaces HTTP timeouts.
     """
+    import traceback as _traceback
+
     cache_key = video_id or query
     cached = _stream_cache.get(cache_key)
     if cached and (time.time() - cached["timestamp"]) < _STREAM_TTL:
+        logger.debug("Stream cache hit for key: %s", cache_key)
         return cached
 
+    # Build the EXACT same ydl_opts that test_ytdlp_search uses (proven to work on HF Spaces)
     try:
         from yt_dlp.networking.impersonate import ImpersonateTarget
         impersonate_val = ImpersonateTarget.from_str("chrome")
@@ -329,37 +337,63 @@ def _resolve_stream(query: str, video_id: str = None):
         "format": "bestaudio/best",
         "quiet": True,
         "noplaylist": True,
-        "check_formats": False,  # Bypass checking if format links are alive to save network roundtrips
-        "socket_timeout": 10,     # Abort if YouTube hangs the connection (relaxed to 10s for slow DNS/handshakes on HF)
-        "impersonate": impersonate_val,  # Impersonate Chrome browser TLS signature to bypass bot detection
+        "check_formats": False,
+        "socket_timeout": 10,
+        "retries": 0,
+        "fragment_retries": 0,
+        "impersonate": impersonate_val,
         "extractor_args": {
             "youtube": {
                 "player_client": ["web", "mweb", "android"]
             }
         },
     }
+    if COOKIE_FILE.exists():
+        ydl_opts["cookiefile"] = str(COOKIE_FILE)
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            if video_id:
-                url = f"https://music.youtube.com/watch?v={video_id}"
-            else:
-                url = f"ytsearch1:{query}"
+    def _try_extract(url: str) -> dict | None:
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video = info["entries"][0] if "entries" in info else info
+                stream_url = video.get("url") or (video.get("formats") or [{}])[-1].get("url")
+                if not stream_url:
+                    raise ValueError("No stream URL in extracted info")
+                return {
+                    "url": stream_url,
+                    "headers": video.get("http_headers", {}),
+                    "video_id": video.get("id", video_id or ""),
+                    "timestamp": time.time(),
+                }
+        except Exception as exc:
+            logger.warning(
+                "yt-dlp extraction failed [url=%s]: %s\n%s",
+                url, exc, _traceback.format_exc()
+            )
+            return None
 
-            info = ydl.extract_info(url, download=False)
-            video = info["entries"][0] if "entries" in info else info
-            result = {
-                "url": video["url"],
-                "headers": video.get("http_headers", {}),
-                "video_id": video.get("id", video_id or ""),
-                "timestamp": time.time(),
-            }
-            _evict_stream_cache()
-            _stream_cache[cache_key] = result
-            return result
-    except Exception as exc:
-        logger.error("Stream resolution failed: %s", exc)
-        return None
+
+    result = None
+
+    # Attempt 1: direct video URL (fast, accurate) — skip if no video_id
+    if video_id:
+        logger.info("Stream attempt 1: direct URL for video_id=%s", video_id)
+        result = _try_extract(f"https://www.youtube.com/watch?v={video_id}")
+
+    # Attempt 2: ytsearch fallback (or primary when no video_id)
+    if result is None:
+        logger.info("Stream attempt 2: ytsearch for query=%r", query)
+        result = _try_extract(f"ytsearch1:{query}")
+
+    if result:
+        logger.info("Stream resolved for query=%r, video_id=%r", query, video_id)
+        _evict_stream_cache()
+        _stream_cache[cache_key] = result
+        return result
+
+    logger.error("All stream resolution attempts failed for query=%r, video_id=%r", query, video_id)
+    return None
+
 
 
 def render_play_response(request: Request, song_id: str, artist: str, title: str, video_id: str = ""):
@@ -387,7 +421,14 @@ def render_play_response(request: Request, song_id: str, artist: str, title: str
         query = f"{artist} {title} official audio"
     stream = _resolve_stream(query, video_id=video_id or None)
     if not stream:
-        return JSONResponse({"error": "Song not found"}, status_code=404)
+        logger.error(
+            "render_play_response: stream resolution returned None for song_id=%s artist=%r title=%r video_id=%r query=%r",
+            song_id, artist, title, video_id, query
+        )
+        return JSONResponse(
+            {"error": "Song not found", "detail": f"Could not resolve stream for: {artist} - {title}"},
+            status_code=404
+        )
 
     base_url = str(request.base_url).rstrip("/")
     proxy_url = f"{base_url}/api/mobile/stream_proxy?url={quote(stream['url'])}&headers={quote(json.dumps(stream['headers']))}"
@@ -486,8 +527,12 @@ def download_task(song_id, artist, title):
         "outtmpl": str(filepath),
         "quiet": True,
         "noplaylist": True,
+        "retries": 0,
+        "fragment_retries": 0,
         "extractor_args": {"youtube": {"client": ["android", "ios"]}},
     }
+    if COOKIE_FILE.exists():
+        ydl_opts["cookiefile"] = str(COOKIE_FILE)
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([f"ytsearch1:{query}"])
@@ -1469,7 +1514,7 @@ def mobile_play(request: Request, id: str = "", artist: str = "", title: str = "
 
 
 @app.get("/api/mobile/test_ytmusic")
-def test_ytmusic():
+def test_ytmusic(artist: str = "Anirudh Ravichander", title: str = "Raga of Revenge"):
     import time
     t0 = time.time()
     try:
@@ -1482,7 +1527,7 @@ def test_ytmusic():
         
     try:
         import ytmusic_service
-        vid = ytmusic_service.resolve_video_id("Anirudh Ravichander", "Raga of Revenge")
+        vid = ytmusic_service.resolve_video_id(artist, title)
         return {"status": "success", "videoId": vid, "curl_cffi_test": cffi_res, "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
         import traceback
@@ -1490,7 +1535,7 @@ def test_ytmusic():
 
 
 @app.get("/api/mobile/test_ytdlp")
-def test_ytdlp():
+def test_ytdlp(url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
     import time
     t0 = time.time()
     try:
@@ -1507,6 +1552,8 @@ def test_ytdlp():
             "noplaylist": True,
             "check_formats": False,
             "socket_timeout": 10,
+            "retries": 0,
+            "fragment_retries": 0,
             "impersonate": impersonate_val,
             "extractor_args": {
                 "youtube": {
@@ -1514,16 +1561,18 @@ def test_ytdlp():
                 }
             },
         }
+        if COOKIE_FILE.exists():
+            ydl_opts["cookiefile"] = str(COOKIE_FILE)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
-            return {"status": "success", "url_len": len(info["url"]), "time": f"{time.time() - t0:.2f}s"}
+            info = ydl.extract_info(url, download=False)
+            return {"status": "success", "url_len": len(info.get("url", "")), "video_url": info.get("url"), "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
         import traceback
         return {"status": "error", "error": traceback.format_exc(), "time": f"{time.time() - t0:.2f}s"}
 
 
 @app.get("/api/mobile/test_ytdlp_search")
-def test_ytdlp_search():
+def test_ytdlp_search(q: str = "Anirudh Ravichander Raga of Revenge"):
     import time
     t0 = time.time()
     try:
@@ -1540,6 +1589,8 @@ def test_ytdlp_search():
             "noplaylist": True,
             "check_formats": False,
             "socket_timeout": 10,
+            "retries": 0,
+            "fragment_retries": 0,
             "impersonate": impersonate_val,
             "extractor_args": {
                 "youtube": {
@@ -1547,14 +1598,104 @@ def test_ytdlp_search():
                 }
             },
         }
+        if COOKIE_FILE.exists():
+            ydl_opts["cookiefile"] = str(COOKIE_FILE)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("ytsearch1:Anirudh Ravichander Raga of Revenge", download=False)
+            info = ydl.extract_info(f"ytsearch1:{q}", download=False)
             video = info["entries"][0] if "entries" in info else info
-            return {"status": "success", "title": video.get("title"), "id": video.get("id"), "time": f"{time.time() - t0:.2f}s"}
+            return {"status": "success", "title": video.get("title"), "id": video.get("id"), "video_url": video.get("url"), "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
         import traceback
         return {"status": "error", "error": traceback.format_exc(), "time": f"{time.time() - t0:.2f}s"}
 
+
+@app.get("/api/mobile/debug_resolve")
+def debug_resolve(q: str = "", video_id: str = ""):
+    import time
+    t0 = time.time()
+    try:
+        import yt_dlp
+        try:
+            from yt_dlp.networking.impersonate import ImpersonateTarget
+            impersonate_val = ImpersonateTarget.from_str("chrome")
+        except Exception:
+            impersonate_val = "chrome"
+
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "quiet": True,
+            "noplaylist": True,
+            "check_formats": False,
+            "socket_timeout": 10,
+            "retries": 0,
+            "fragment_retries": 0,
+            "impersonate": impersonate_val,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "mweb", "android"]
+                }
+            },
+        }
+        if COOKIE_FILE.exists():
+            ydl_opts["cookiefile"] = str(COOKIE_FILE)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if video_id:
+                url = f"https://www.youtube.com/watch?v={video_id}"
+            else:
+                url = f"ytsearch1:{q}"
+
+            info = ydl.extract_info(url, download=False)
+            video = info["entries"][0] if "entries" in info else info
+            return {
+                "status": "success",
+                "title": video.get("title"),
+                "id": video.get("id"),
+                "video_url": video.get("url"),
+                "time": f"{time.time() - t0:.2f}s"
+            }
+    except Exception as e:
+        import traceback
+        return {"status": "error", "error": traceback.format_exc(), "time": f"{time.time() - t0:.2f}s"}
+
+
+
+@app.get("/api/mobile/test_play_flow")
+def test_play_flow(artist: str = "Arijit Singh", title: str = "Tum Hi Ho"):
+    """Diagnostic: simulates the full render_play_response pipeline and returns detailed error info."""
+    import traceback as tb
+    import time as _time
+    result: dict = {"artist": artist, "title": title}
+    t0 = _time.time()
+
+    # Step 1: resolve_video_id (same as render_play_response)
+    video_id = ""
+    try:
+        video_id = ytmusic_service.resolve_video_id(artist, title) or ""
+        result["step1_resolve_video_id"] = {"status": "ok", "video_id": video_id, "time": f"{_time.time()-t0:.2f}s"}
+    except Exception as e:
+        result["step1_resolve_video_id"] = {"status": "error", "error": str(e), "traceback": tb.format_exc()}
+        video_id = ""
+
+    # Step 2: _resolve_stream
+    clean_title = title.lower()
+    if any(w in clean_title for w in ["remix", "cover", "live", "acoustic", "mashup", "reverb", "slowed"]):
+        query = f"{artist} {title}"
+    else:
+        query = f"{artist} {title} official audio"
+    result["query"] = query
+    result["video_id_for_resolve"] = video_id or None
+
+    t1 = _time.time()
+    stream = _resolve_stream(query, video_id=video_id or None)
+    result["step2_resolve_stream"] = {
+        "status": "ok" if stream else "error",
+        "has_url": bool(stream and stream.get("url")),
+        "url_len": len(stream["url"]) if stream and stream.get("url") else 0,
+        "video_id": stream.get("video_id") if stream else None,
+        "time": f"{_time.time()-t1:.2f}s",
+    }
+    result["total_time"] = f"{_time.time()-t0:.2f}s"
+    return result
 
 
 @app.get("/api/mobile/up_next")
