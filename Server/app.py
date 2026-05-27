@@ -583,42 +583,40 @@ def preload_stream(artist: str, title: str, video_id: str = ""):
 # ROUTES
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Serve frontend files from parent directory
+# Serve frontend files from parent directory (only if they exist, e.g. for local dev)
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
 @app.get("/")
 def root():
-    return RedirectResponse("/app")
+    if FRONTEND_DIR.exists() and (FRONTEND_DIR / "index.html").exists():
+        return RedirectResponse("/app")
+    return {"status": "ok", "message": "Daydreamin API Backend"}
 
 
-@app.get("/app")
-def serve_app():
-    return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html")
+if FRONTEND_DIR.exists() and (FRONTEND_DIR / "index.html").exists():
+    @app.get("/app")
+    def serve_app():
+        return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html")
 
+    # Mount the modular CSS and JS directories
+    app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
+    app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
 
-# Mount the modular CSS and JS directories
-app.mount("/css", StaticFiles(directory=FRONTEND_DIR / "css"), name="css")
-app.mount("/js", StaticFiles(directory=FRONTEND_DIR / "js"), name="js")
+    @app.get("/manifest.json")
+    def serve_manifest():
+        return FileResponse(BASE_DIR.parent / "manifest.json", media_type="application/json")
 
+    @app.get("/logo-icon.png")
+    def serve_logo_icon():
+        return FileResponse(FRONTEND_DIR / "logo-icon.png", media_type="image/png")
 
-@app.get("/manifest.json")
-def serve_manifest():
-    return FileResponse(BASE_DIR.parent / "manifest.json", media_type="application/json")
+    @app.get("/logo.png")
+    def serve_logo():
+        return FileResponse(FRONTEND_DIR / "logo.png", media_type="image/png")
 
-
-@app.get("/logo-icon.png")
-def serve_logo_icon():
-    return FileResponse(FRONTEND_DIR / "logo-icon.png", media_type="image/png")
-
-
-@app.get("/logo.png")
-def serve_logo():
-    return FileResponse(FRONTEND_DIR / "logo.png", media_type="image/png")
-
-
-@app.get("/logo-icon.png")
-def serve_favicon():
-    return FileResponse(FRONTEND_DIR / "logo-icon.png", media_type="image/png")
+    @app.get("/logo-icon.png")
+    def serve_favicon():
+        return FileResponse(FRONTEND_DIR / "logo-icon.png", media_type="image/png")
 
 
 @app.get("/api/mobile/health")
