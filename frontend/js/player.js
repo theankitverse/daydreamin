@@ -99,7 +99,8 @@ async function playSong(song, addHistory=true, keepQueue=false) {
     if (!streamUrl) {
       setBufferingUI(true);
       const data = await API.play(song);
-      streamUrl = data.direct_url || data.stream_url || data.url || data.audio_url || '';
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      streamUrl = (isLocal && data.direct_url) || data.stream_url || data.url || data.audio_url || '';
       if (data.videoId) song.videoId = data.videoId;
       if (streamUrl) setCachedUrl(song, streamUrl, data.videoId||'');
     }
@@ -252,7 +253,8 @@ async function nextSong() {
       try {
         const retry = await API.play(next);
         if (S.song !== next) return; // Guard
-        const freshUrl = retry.direct_url || retry.stream_url || retry.url || '';
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const freshUrl = (isLocal && retry.direct_url) || retry.stream_url || retry.url || '';
         if (freshUrl) {
           audio.src = freshUrl;
           await audio.play();
@@ -279,7 +281,8 @@ async function nextSong() {
       setBufferingUI(true);
       const data = await API.play(next);
       if (S.song !== next) return; // Guard
-      streamUrl = data.direct_url || data.stream_url || data.url || data.audio_url || '';
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      streamUrl = (isLocal && data.direct_url) || data.stream_url || data.url || data.audio_url || '';
       if (!streamUrl) throw new Error('No stream URL');
       if (data.videoId) next.videoId = data.videoId;
       setCachedUrl(next, streamUrl, data.videoId||'');

@@ -446,7 +446,7 @@ def build_proxy_response(url: str, incoming_headers, headers_json: str):
         response_headers["Accept-Ranges"] = "bytes"
 
         return StreamingResponse(
-            req.iter_content(chunk_size=1024 * 32),
+            req.iter_content(chunk_size=1024 * 256),
             status_code=req.status_code,
             media_type="audio/mp4",
             headers=response_headers,
