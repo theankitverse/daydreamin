@@ -59,9 +59,9 @@ function getDefaultBackendUrl() {
   if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
     return 'http://127.0.0.1:499';
   }
-  // Production: point to your Oracle Cloud backend
+  // Production: point to your Hugging Face Space backend
   // Update this URL after deploying your backend
-  return 'http://127.0.0.1:499'; // TODO: Replace with Oracle Cloud IP
+  return 'https://daydreaminn-daydreamin-server.hf.space';
 }
 
 const S = {
