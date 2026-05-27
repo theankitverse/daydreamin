@@ -1473,19 +1473,20 @@ def test_ytmusic():
     import time
     t0 = time.time()
     try:
-        import yt_dlp
-        import curl_cffi
-        cffi_ver = curl_cffi.__version__
+        from curl_cffi import requests as curl_requests
+        r = curl_requests.get("https://www.google.com", timeout=5, impersonate="chrome")
+        cffi_res = f"Success! status: {r.status_code}"
     except Exception as e:
-        cffi_ver = f"Failed to import: {e}"
+        import traceback
+        cffi_res = f"Failed: {traceback.format_exc()}"
         
     try:
         import ytmusic_service
         vid = ytmusic_service.resolve_video_id("Anirudh Ravichander", "Raga of Revenge")
-        return {"status": "success", "videoId": vid, "curl_cffi": cffi_ver, "yt_dlp_version": yt_dlp.version.__version__, "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "success", "videoId": vid, "curl_cffi_test": cffi_res, "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
         import traceback
-        return {"status": "error", "error": traceback.format_exc(), "curl_cffi": cffi_ver, "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "error", "error": traceback.format_exc(), "curl_cffi_test": cffi_res, "time": f"{time.time() - t0:.2f}s"}
 
 
 @app.get("/api/mobile/test_ytdlp")
