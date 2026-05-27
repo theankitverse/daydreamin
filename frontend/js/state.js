@@ -64,6 +64,14 @@ function getDefaultBackendUrl() {
   return 'https://daydreaminn-daydreamin-server.hf.space';
 }
 
+// Auto-migration: if in production (Vercel) but local storage has localhost URL, clear it!
+const _storedUrl = localStorage.getItem('dyd_url');
+const _host = window.location.hostname;
+const _isLocal = _host === 'localhost' || _host === '127.0.0.1' || _host.startsWith('192.168.');
+if (!_isLocal && _storedUrl && (_storedUrl.includes('127.0.0.1') || _storedUrl.includes('localhost') || _storedUrl.includes(':499'))) {
+  localStorage.removeItem('dyd_url');
+}
+
 const S = {
   url:      localStorage.getItem('dyd_url') || getDefaultBackendUrl(),
   autoplay: localStorage.getItem('dyd_autoplay') === 'true',
