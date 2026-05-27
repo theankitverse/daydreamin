@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+song_cache/
+data/tmp*
+data/pymusic.db
+tests/
+restart_server.bat
+.env
+.git/
