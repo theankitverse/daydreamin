@@ -6,4 +6,4 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :499 ^| findstr LISTENING') d
 
 timeout /t 1 >nul
 
-python app.py
+venv\Scripts\python.exe app.py
