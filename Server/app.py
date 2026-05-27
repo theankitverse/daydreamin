@@ -1461,6 +1461,41 @@ def mobile_play(request: Request, id: str = "", artist: str = "", title: str = "
     return render_play_response(request, id, artist, title, video_id=videoId)
 
 
+@app.get("/api/mobile/test_debug")
+def test_debug():
+    import time
+    log = []
+    
+    t0 = time.time()
+    log.append("Starting YTMusic test...")
+    try:
+        import ytmusic_service
+        vid = ytmusic_service.resolve_video_id("Anirudh Ravichander", "Raga of Revenge")
+        log.append(f"YTMusic resolved videoId: {vid} in {time.time() - t0:.2f}s")
+    except Exception as e:
+        log.append(f"YTMusic failed: {e} in {time.time() - t0:.2f}s")
+        
+    t1 = time.time()
+    log.append("Starting yt-dlp test...")
+    try:
+        import yt_dlp
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "quiet": True,
+            "noplaylist": True,
+            "check_formats": False,
+            "socket_timeout": 5,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
+            log.append(f"yt-dlp success in {time.time() - t1:.2f}s, url len: {len(info['url'])}")
+    except Exception as e:
+        log.append(f"yt-dlp failed: {e} in {time.time() - t1:.2f}s")
+        
+    return {"log": log}
+
+
+
 @app.get("/api/mobile/up_next")
 def mobile_up_next(song_id: str = "", artist: str = "", title: str = "", limit: int = 15):
     return JSONResponse(build_up_next_response(song_id, artist=artist, title=title, limit=limit or 15))
