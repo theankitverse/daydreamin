@@ -1467,11 +1467,18 @@ def test_ytmusic():
     import time
     t0 = time.time()
     try:
+        import yt_dlp
+        import curl_cffi
+        cffi_ver = curl_cffi.__version__
+    except Exception as e:
+        cffi_ver = f"Failed to import: {e}"
+        
+    try:
         import ytmusic_service
         vid = ytmusic_service.resolve_video_id("Anirudh Ravichander", "Raga of Revenge")
-        return {"status": "success", "videoId": vid, "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "success", "videoId": vid, "curl_cffi": cffi_ver, "yt_dlp_version": yt_dlp.version.__version__, "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
-        return {"status": "error", "error": str(e), "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "error", "error": str(e), "curl_cffi": cffi_ver, "time": f"{time.time() - t0:.2f}s"}
 
 
 @app.get("/api/mobile/test_ytdlp")
