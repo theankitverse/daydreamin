@@ -324,10 +324,10 @@ def _resolve_stream(query: str, video_id: str = None):
         "quiet": True,
         "noplaylist": True,
         "check_formats": False,  # Bypass checking if format links are alive to save network roundtrips
-        "socket_timeout": 5,     # Abort quickly if YouTube hangs the connection
+        "socket_timeout": 10,     # Abort if YouTube hangs the connection (relaxed to 10s for slow DNS/handshakes on HF)
         "extractor_args": {
             "youtube": {
-                "client": ["ios", "android"]
+                "client": ["ios", "android", "tv", "web_embedded", "mweb"]
             }
         },
     }
