@@ -319,13 +319,19 @@ def _resolve_stream(query: str, video_id: str = None):
     if cached and (time.time() - cached["timestamp"]) < _STREAM_TTL:
         return cached
 
+    try:
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+        impersonate_val = ImpersonateTarget.from_str("chrome")
+    except Exception:
+        impersonate_val = "chrome"
+
     ydl_opts = {
         "format": "bestaudio/best",
         "quiet": True,
         "noplaylist": True,
         "check_formats": False,  # Bypass checking if format links are alive to save network roundtrips
         "socket_timeout": 10,     # Abort if YouTube hangs the connection (relaxed to 10s for slow DNS/handshakes on HF)
-        "impersonate": "chrome",  # Impersonate Chrome browser TLS signature to bypass bot detection
+        "impersonate": impersonate_val,  # Impersonate Chrome browser TLS signature to bypass bot detection
         "extractor_args": {
             "youtube": {
                 "player_client": ["web", "mweb", "android"]
@@ -1488,13 +1494,19 @@ def test_ytdlp():
     t0 = time.time()
     try:
         import yt_dlp
+        try:
+            from yt_dlp.networking.impersonate import ImpersonateTarget
+            impersonate_val = ImpersonateTarget.from_str("chrome")
+        except Exception:
+            impersonate_val = "chrome"
+
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
             "noplaylist": True,
             "check_formats": False,
             "socket_timeout": 10,
-            "impersonate": "chrome",
+            "impersonate": impersonate_val,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["web", "mweb", "android"]
@@ -1515,13 +1527,19 @@ def test_ytdlp_search():
     t0 = time.time()
     try:
         import yt_dlp
+        try:
+            from yt_dlp.networking.impersonate import ImpersonateTarget
+            impersonate_val = ImpersonateTarget.from_str("chrome")
+        except Exception:
+            impersonate_val = "chrome"
+
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
             "noplaylist": True,
             "check_formats": False,
             "socket_timeout": 10,
-            "impersonate": "chrome",
+            "impersonate": impersonate_val,
             "extractor_args": {
                 "youtube": {
                     "player_client": ["web", "mweb", "android"]
