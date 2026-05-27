@@ -122,7 +122,7 @@ let _createPlSong = null; // song to add when creating new playlist
 const audio = new Audio();
 audio.preload = 'auto';
 audio.setAttribute('playsinline', true);
-audio.crossOrigin = 'anonymous';
+// audio.crossOrigin = 'anonymous'; // Removed to allow playing direct YouTube CDN URLs without CORS errors
 
 // Stream URL cache: Map<cacheKey, {url, videoId, timestamp}>
 const urlCache = new Map();

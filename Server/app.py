@@ -323,6 +323,7 @@ def _resolve_stream(query: str, video_id: str = None):
         "format": "bestaudio/best",
         "quiet": True,
         "noplaylist": True,
+        "check_formats": False,  # Bypass checking if format links are alive to save network roundtrips
         "extractor_args": {
             "youtube": {
                 "client": ["ios", "android"]

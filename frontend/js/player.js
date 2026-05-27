@@ -99,7 +99,7 @@ async function playSong(song, addHistory=true, keepQueue=false) {
     if (!streamUrl) {
       setBufferingUI(true);
       const data = await API.play(song);
-      streamUrl = data.stream_url || data.url || data.audio_url || '';
+      streamUrl = data.direct_url || data.stream_url || data.url || data.audio_url || '';
       if (data.videoId) song.videoId = data.videoId;
       if (streamUrl) setCachedUrl(song, streamUrl, data.videoId||'');
     }
@@ -252,7 +252,7 @@ async function nextSong() {
       try {
         const retry = await API.play(next);
         if (S.song !== next) return; // Guard
-        const freshUrl = retry.stream_url || retry.url || '';
+        const freshUrl = retry.direct_url || retry.stream_url || retry.url || '';
         if (freshUrl) {
           audio.src = freshUrl;
           await audio.play();
@@ -279,7 +279,7 @@ async function nextSong() {
       setBufferingUI(true);
       const data = await API.play(next);
       if (S.song !== next) return; // Guard
-      streamUrl = data.stream_url || data.url || data.audio_url || '';
+      streamUrl = data.direct_url || data.stream_url || data.url || data.audio_url || '';
       if (!streamUrl) throw new Error('No stream URL');
       if (data.videoId) next.videoId = data.videoId;
       setCachedUrl(next, streamUrl, data.videoId||'');
