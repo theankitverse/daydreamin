@@ -120,12 +120,26 @@ def get_radio_queue(video_id: str | None = None, artist: str = "", title: str = 
     if not video_id:
         return []
 
-    try:
-        yt = _get_client()
-        watch = yt.get_watch_playlist(videoId=video_id, radio=True, limit=limit)
-        if not watch or "tracks" not in watch:
-            return []
+    watch = None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            yt = _get_client()
+            watch = yt.get_watch_playlist(videoId=video_id, radio=True, limit=limit)
+            if watch and "tracks" in watch:
+                break
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                logger.warning("get_radio_queue failed for videoId=%s on attempt %d (error: %s). Retrying...", video_id, attempt + 1, exc)
+                time.sleep(0.5)
+            else:
+                logger.warning("get_radio_queue failed for videoId=%s after %d attempts: %s", video_id, max_retries, exc)
+                return []
 
+    if not watch or "tracks" not in watch:
+        return []
+
+    try:
         tracks = []
         for t in watch.get("tracks", []):
             if not t:

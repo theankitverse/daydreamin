@@ -342,6 +342,8 @@ def _resolve_stream(query: str, video_id: str = None):
         "retries": 0,
         "fragment_retries": 0,
         "impersonate": impersonate_val,
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
         "extractor_args": {
             "youtube": {
                 "player_client": ["web", "mweb", "android"]
@@ -529,6 +531,8 @@ def download_task(song_id, artist, title):
         "noplaylist": True,
         "retries": 0,
         "fragment_retries": 0,
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
         "extractor_args": {"youtube": {"client": ["android", "ios"]}},
     }
     if COOKIE_FILE.exists():
@@ -1555,6 +1559,8 @@ def test_ytdlp(url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
             "retries": 0,
             "fragment_retries": 0,
             "impersonate": impersonate_val,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
             "extractor_args": {
                 "youtube": {
                     "player_client": ["web", "mweb", "android"]
@@ -1592,6 +1598,8 @@ def test_ytdlp_search(q: str = "Anirudh Ravichander Raga of Revenge"):
             "retries": 0,
             "fragment_retries": 0,
             "impersonate": impersonate_val,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
             "extractor_args": {
                 "youtube": {
                     "player_client": ["web", "mweb", "android"]
@@ -1630,6 +1638,8 @@ def debug_resolve(q: str = "", video_id: str = ""):
             "retries": 0,
             "fragment_retries": 0,
             "impersonate": impersonate_val,
+            "js_runtimes": {"node": {}},
+            "remote_components": ["ejs:github"],
             "extractor_args": {
                 "youtube": {
                     "player_client": ["web", "mweb", "android"]
