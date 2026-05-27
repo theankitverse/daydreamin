@@ -1478,7 +1478,7 @@ def test_ytmusic():
         vid = ytmusic_service.resolve_video_id("Anirudh Ravichander", "Raga of Revenge")
         return {"status": "success", "videoId": vid, "curl_cffi": cffi_ver, "yt_dlp_version": yt_dlp.version.__version__, "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
-        return {"status": "error", "error": str(e), "curl_cffi": cffi_ver, "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "error", "error": repr(e), "curl_cffi": cffi_ver, "time": f"{time.time() - t0:.2f}s"}
 
 
 @app.get("/api/mobile/test_ytdlp")
@@ -1504,7 +1504,7 @@ def test_ytdlp():
             info = ydl.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ", download=False)
             return {"status": "success", "url_len": len(info["url"]), "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
-        return {"status": "error", "error": str(e), "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "error", "error": repr(e), "time": f"{time.time() - t0:.2f}s"}
 
 
 @app.get("/api/mobile/test_ytdlp_search")
@@ -1531,7 +1531,7 @@ def test_ytdlp_search():
             video = info["entries"][0] if "entries" in info else info
             return {"status": "success", "title": video.get("title"), "id": video.get("id"), "time": f"{time.time() - t0:.2f}s"}
     except Exception as e:
-        return {"status": "error", "error": str(e), "time": f"{time.time() - t0:.2f}s"}
+        return {"status": "error", "error": repr(e), "time": f"{time.time() - t0:.2f}s"}
 
 
 
