@@ -83,6 +83,67 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+# ── Tunnel helpers ──────────────────────────────────────────────────────────
+TUNNEL_URL_FILE = DATA_DIR / "tunnel_url.txt"
+
+def register_tunnel_url(url):
+    logger.info("Found Cloudflare Tunnel URL: %s", url)
+    try:
+        with open(TUNNEL_URL_FILE, "w", encoding="utf-8") as f:
+            f.write(url)
+    except Exception as e:
+        logger.warning("Failed to save tunnel URL locally: %s", e)
+
+    # Register on Hugging Face Space
+    hf_url = "https://daydreaminn-daydreamin-server.hf.space/api/mobile/set_tunnel_url"
+    try:
+        r = requests.post(hf_url, params={"url": url}, timeout=10)
+        if r.status_code == 200:
+            logger.info("Successfully registered tunnel URL on Hugging Face Space!")
+        else:
+            logger.warning("Failed to register tunnel URL on Hugging Face: %d %s", r.status_code, r.text)
+    except Exception as e:
+        logger.warning("Failed to contact Hugging Face Space registry: %s", e)
+
+
+def watch_tunnel_log():
+    log_file = DATA_DIR / "cloudflared.log"
+    # Wait for the log file to be created
+    for _ in range(30):
+        if log_file.exists():
+            break
+        time.sleep(0.5)
+    else:
+        logger.warning("Cloudflare log file not found after 15 seconds.")
+        return
+
+    logger.info("Watching cloudflared.log for tunnel URL...")
+    import re
+    url_pattern = re.compile(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com")
+    
+    with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+        # First read any existing content (fast catch)
+        content = f.read()
+        match = url_pattern.search(content)
+        if match:
+            url = match.group(0)
+            register_tunnel_url(url)
+            return
+
+        # If not found yet, poll/follow the file for updates
+        for _ in range(60):
+            line = f.readline()
+            if not line:
+                time.sleep(0.5)
+                continue
+            match = url_pattern.search(line)
+            if match:
+                url = match.group(0)
+                register_tunnel_url(url)
+                return
+    logger.warning("Cloudflare Tunnel URL not found in log file after 30 seconds.")
+
+
 # ── Cache helpers ───────────────────────────────────────────────────────────
 def is_song_cached(song_id):
     return (CACHE_DIR / f"{song_id}.m4a").exists()
@@ -682,6 +743,41 @@ if FRONTEND_DIR.exists() and (FRONTEND_DIR / "index.html").exists():
     @app.get("/logo-icon.png")
     def serve_favicon():
         return FileResponse(FRONTEND_DIR / "logo-icon.png", media_type="image/png")
+
+
+@app.on_event("startup")
+def startup_event():
+    import os
+    if os.name == "nt":
+        import threading
+        threading.Thread(target=watch_tunnel_log, daemon=True).start()
+
+
+@app.post("/api/mobile/set_tunnel_url")
+def set_tunnel_url(url: str):
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(TUNNEL_URL_FILE, "w", encoding="utf-8") as f:
+            f.write(url.strip())
+        logger.info("Tunnel URL updated to: %s", url)
+        return {"status": "success", "url": url}
+    except Exception as e:
+        logger.error("Failed to save tunnel URL: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/mobile/get_tunnel_url")
+def get_tunnel_url():
+    if TUNNEL_URL_FILE.exists():
+        try:
+            with open(TUNNEL_URL_FILE, "r", encoding="utf-8") as f:
+                url = f.read().strip()
+                if url:
+                    return {"url": url}
+        except Exception:
+            pass
+    # Fallback default
+    return {"url": "https://moisture-antenna-poly-property.trycloudflare.com"}
 
 
 @app.get("/api/mobile/health")

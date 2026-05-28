@@ -367,7 +367,29 @@ function toggleShortcuts() {
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT — runs AFTER all scripts have loaded (DOMContentLoaded)
 // ═══════════════════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   switchTab('home');
+
+  // Resolve dynamic Cloudflare Tunnel URL via Hugging Face Space registry on startup
+  try {
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
+    if (!isLocal && !localStorage.getItem('dyd_url')) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const r = await fetch('https://daydreaminn-daydreamin-server.hf.space/api/mobile/get_tunnel_url', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (r.ok) {
+        const data = await r.json();
+        if (data && data.url) {
+          S.url = data.url;
+          console.log("Resolved backend tunnel URL from registry:", S.url);
+        }
+      }
+    }
+  } catch(e) {
+    console.warn("Failed to resolve dynamic backend URL, falling back to default:", S.url, e);
+  }
+
   loadHomeFeeds();
 });

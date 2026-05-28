@@ -16,17 +16,14 @@ start "FastAPI Server" cmd /c "cd /d "%~dp0Server" && venv\Scripts\python.exe ap
 
 :: Start Cloudflare Tunnel in a new window
 echo Starting Cloudflare Tunnel...
-start "Cloudflare Tunnel" cmd /c "C:\Program Files (x86)\cloudflared\cloudflared.exe tunnel --url http://localhost:499"
+start "Cloudflare Tunnel" cmd /c "C:\Program Files (x86)\cloudflared\cloudflared.exe tunnel --url http://localhost:499 --loglevel info --logfile Server/data/cloudflared.log"
 
 echo.
 echo =======================================================
 echo Backend server is running on http://localhost:499
-echo Cloudflare Tunnel window is open. Look in that window
-echo for the line starting with:
-echo    https://xxxxxxxx.trycloudflare.com
+echo Cloudflare Tunnel has been started.
 echo.
-echo Paste that URL into the app's settings panel (click the 
-echo gear/settings icon in the top right of the web app) 
-echo to connect instantly without redeploying.
+echo The new URL will be automatically detected and registered
+echo to your web app! You can close this window now or keep it open.
 echo =======================================================
 pause
