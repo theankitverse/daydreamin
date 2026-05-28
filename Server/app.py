@@ -421,13 +421,7 @@ def _resolve_stream(query: str, video_id: str = None):
         "retries": 0,
         "fragment_retries": 0,
         "impersonate": impersonate_val,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web", "mweb", "android"]
-            }
-        },
+        "source_address": "0.0.0.0",  # Force IPv4 to prevent slow IPv6 DNS/routing timeouts
     }
     if COOKIE_FILE.exists():
         ydl_opts["cookiefile"] = str(COOKIE_FILE)
@@ -610,9 +604,7 @@ def download_task(song_id, artist, title):
         "noplaylist": True,
         "retries": 0,
         "fragment_retries": 0,
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"client": ["android", "ios"]}},
+        "source_address": "0.0.0.0",  # Force IPv4 to prevent slow IPv6 DNS/routing timeouts
     }
     if COOKIE_FILE.exists():
         ydl_opts["cookiefile"] = str(COOKIE_FILE)
