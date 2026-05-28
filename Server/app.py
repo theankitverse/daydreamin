@@ -94,6 +94,23 @@ def register_tunnel_url(url):
     except Exception as e:
         logger.warning("Failed to save tunnel URL locally: %s", e)
 
+    # Extract subdomain for keyvalue.immanuel.co registration
+    import re
+    match = re.search(r"https://([a-zA-Z0-9\-]+)\.trycloudflare\.com", url)
+    if match:
+        subdomain = match.group(1)
+        kv_url = f"https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/9bo6g73h/tunnel_subdomain/{subdomain}"
+        try:
+            r = requests.post(kv_url, timeout=10)
+            if r.status_code == 200:
+                logger.info("Successfully registered tunnel subdomain %s on keyvalue.immanuel.co!", subdomain)
+            else:
+                logger.warning("Failed to register tunnel subdomain on keyvalue.immanuel.co: %d %s", r.status_code, r.text)
+        except Exception as e:
+            logger.warning("Failed to contact keyvalue.immanuel.co: %s", e)
+    else:
+        logger.warning("Could not extract subdomain from tunnel URL: %s", url)
+
     # Register on Hugging Face Space
     hf_url = "https://daydreaminn-daydreamin-server.hf.space/api/mobile/set_tunnel_url"
     try:
@@ -104,6 +121,7 @@ def register_tunnel_url(url):
             logger.warning("Failed to register tunnel URL on Hugging Face: %d %s", r.status_code, r.text)
     except Exception as e:
         logger.warning("Failed to contact Hugging Face Space registry: %s", e)
+
 
 
 def watch_tunnel_log():

@@ -5,10 +5,14 @@ echo =======================================================
 echo Starting Daydreamin Backend and Cloudflare Tunnel...
 echo =======================================================
 
-:: Kill any existing FastAPI server on port 499
+:: Kill any existing FastAPI server on port 499 and any running cloudflared process
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr :499 ^| findstr LISTENING') do (
     taskkill /PID %%a /F >nul 2>&1
 )
+taskkill /IM cloudflared.exe /F >nul 2>&1
+
+:: Delete old cloudflared log to prevent detecting a stale tunnel URL on startup
+if exist "%~dp0Server\data\cloudflared.log" del /f /q "%~dp0Server\data\cloudflared.log"
 
 :: Start FastAPI server in a new window
 echo Starting FastAPI server on port 499...

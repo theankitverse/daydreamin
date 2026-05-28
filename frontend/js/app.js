@@ -370,19 +370,20 @@ function toggleShortcuts() {
 document.addEventListener('DOMContentLoaded', async () => {
   switchTab('home');
 
-  // Resolve dynamic Cloudflare Tunnel URL via Hugging Face Space registry on startup
+  // Resolve dynamic Cloudflare Tunnel URL via anonymous key-value registry on startup
   try {
     const host = window.location.hostname;
     const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
     if (!isLocal && !localStorage.getItem('dyd_url')) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const r = await fetch('https://daydreaminn-daydreamin-server.hf.space/api/mobile/get_tunnel_url', { signal: controller.signal });
+      const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain', { signal: controller.signal });
       clearTimeout(timeoutId);
       if (r.ok) {
-        const data = await r.json();
-        if (data && data.url) {
-          S.url = data.url;
+        const raw = await r.text();
+        const subdomain = raw.replace(/"/g, '').trim();
+        if (subdomain && subdomain !== 'null' && subdomain !== 'None') {
+          S.url = `https://${subdomain}.trycloudflare.com`;
           console.log("Resolved backend tunnel URL from registry:", S.url);
         }
       }
