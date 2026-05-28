@@ -60,7 +60,7 @@ function getDefaultBackendUrl() {
     return 'http://127.0.0.1:499';
   }
   // Production: point to your Cloudflare Tunnel backend
-  return 'https://fixed-epson-indicates-updated.trycloudflare.com';
+  return 'https://moisture-antenna-poly-property.trycloudflare.com';
 }
 
 // Auto-migration: if in production (Vercel) but local storage has localhost URL, clear it!
