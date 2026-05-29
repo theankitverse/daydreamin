@@ -7,8 +7,9 @@ async function preloadNext() {
   if (!getCachedUrl(nextSong)) {
     try {
       const data = await API.play(nextSong);
-      const streamUrl = data.stream_url || data.url || data.audio_url || '';
-      if (streamUrl) setCachedUrl(nextSong, streamUrl, data.videoId || '');
+      const streamUrl = (S.skipDirectUrl ? null : data.direct_url) || data.stream_url || data.url || data.audio_url || '';
+      const fallbackUrl = data.stream_url || data.url || data.audio_url || '';
+      if (streamUrl) setCachedUrl(nextSong, streamUrl, data.videoId || '', fallbackUrl);
     } catch(e) { /* silent */ }
   }
 

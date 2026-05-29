@@ -111,8 +111,15 @@ function getCachedUrl(song) {
   return null;
 }
 
-function setCachedUrl(song, url, videoId) {
-  urlCache.set(cacheKey(song), { url, videoId, timestamp: Date.now() });
+function getCachedProxy(song) {
+  const k = cacheKey(song);
+  const c = urlCache.get(k);
+  if (c && (Date.now() - c.timestamp) < URL_TTL) return c.proxyUrl || '';
+  return '';
+}
+
+function setCachedUrl(song, url, videoId, proxyUrl) {
+  urlCache.set(cacheKey(song), { url, videoId, proxyUrl: proxyUrl || '', timestamp: Date.now() });
 }
 
 // ─── GREETING ──────────────────────────────────────────────────────────────

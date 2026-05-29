@@ -23,7 +23,7 @@ start "FastAPI Server" cmd /c "cd Server && venv\Scripts\python.exe app.py"
 
 :: Start Cloudflare Tunnel in a new window
 echo Starting Cloudflare Tunnel...
-start "Cloudflare Tunnel" "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:499 --loglevel info --logfile Server/data/cloudflared.log
+start "Cloudflare Tunnel" "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://127.0.0.1:499 --loglevel info --logfile Server/data/cloudflared.log
 
 echo.
 echo =======================================================

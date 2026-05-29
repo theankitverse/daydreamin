@@ -96,18 +96,48 @@ async function playSong(song, addHistory=true, keepQueue=false) {
   try {
     // Check URL cache first
     let streamUrl = getCachedUrl(song);
+    let isDirectUrl = false;
+    let fallbackUrl = null;
+
     if (!streamUrl) {
       setBufferingUI(true);
       const data = await API.play(song);
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      streamUrl = (isLocal && data.direct_url) || data.stream_url || data.url || data.audio_url || '';
+      streamUrl = (S.skipDirectUrl ? null : data.direct_url) || data.stream_url || data.url || data.audio_url || '';
+      isDirectUrl = !S.skipDirectUrl && !!data.direct_url;
+      fallbackUrl = data.stream_url || data.url || data.audio_url || '';
       if (data.videoId) song.videoId = data.videoId;
-      if (streamUrl) setCachedUrl(song, streamUrl, data.videoId||'');
+      if (streamUrl) setCachedUrl(song, streamUrl, data.videoId||'', fallbackUrl);
+    } else {
+      fallbackUrl = getCachedProxy(song);
+      isDirectUrl = streamUrl && !streamUrl.includes('/stream_proxy');
     }
     if (!streamUrl) throw new Error('No stream URL');
     audio.pause();
+
+    // Prepare error fallback
+    audio.onerror = async () => {
+      audio.onerror = null;
+      if (S.song !== song) return;
+      if (isDirectUrl && fallbackUrl && fallbackUrl !== streamUrl) {
+        console.warn("Direct URL playback failed, falling back to proxy URL:", fallbackUrl);
+        S.skipDirectUrl = true; // disable direct URLs for the rest of the session
+        toast('Direct playback failed, retrying with proxy…');
+        try {
+          audio.src = fallbackUrl;
+          await audio.play();
+        } catch(err) {
+          toast('Playback failed: ' + err.message);
+          setBufferingUI(false);
+        }
+      } else {
+        toast('Playback failed');
+        setBufferingUI(false);
+      }
+    };
+
     audio.src = streamUrl;
     await audio.play();
+    audio.onerror = null; // Clear if play starts successfully
 
     // Background tasks: queue + lyrics + preload
     // Only auto-fill queue if NOT playing from a manual source (playlist/liked)
@@ -246,21 +276,53 @@ async function nextSong() {
   let streamUrl = getCachedUrl(next);
   if (streamUrl) {
     if (S.song !== next) return; // Guard
+    let isDirectUrl = streamUrl && !streamUrl.includes('/stream_proxy');
+    let fallbackUrl = getCachedProxy(next);
     audio.src = streamUrl;
     audio.onerror = async () => {
       audio.onerror = null; // Clear immediately when error triggers to avoid double execution or leaks
       if (S.song !== next) return; // Guard
-      try {
-        const retry = await API.play(next);
-        if (S.song !== next) return; // Guard
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const freshUrl = (isLocal && retry.direct_url) || retry.stream_url || retry.url || '';
-        if (freshUrl) {
-          audio.src = freshUrl;
+      if (isDirectUrl && fallbackUrl && fallbackUrl !== streamUrl) {
+        console.warn("Direct URL playback failed from cache, falling back to proxy URL:", fallbackUrl);
+        S.skipDirectUrl = true;
+        toast('Direct playback failed, retrying with proxy…');
+        try {
+          audio.src = fallbackUrl;
           await audio.play();
+        } catch(err) {
+          toast('Playback failed: ' + err.message);
         }
-      } catch(e) {
-        toast('Playback failed');
+      } else {
+        try {
+          const retry = await API.play(next);
+          if (S.song !== next) return; // Guard
+          const freshUrl = (S.skipDirectUrl ? null : retry.direct_url) || retry.stream_url || retry.url || '';
+          const isFreshDirect = !S.skipDirectUrl && !!retry.direct_url;
+          const freshFallback = retry.stream_url || retry.url || '';
+          if (freshUrl) {
+            audio.onerror = async () => {
+              audio.onerror = null;
+              if (S.song !== next) return;
+              if (isFreshDirect && freshFallback && freshFallback !== freshUrl) {
+                S.skipDirectUrl = true;
+                toast('Direct playback failed, retrying with proxy…');
+                try {
+                  audio.src = freshFallback;
+                  await audio.play();
+                } catch(err) {
+                  toast('Playback failed');
+                }
+              } else {
+                toast('Playback failed');
+              }
+            };
+            audio.src = freshUrl;
+            await audio.play();
+            audio.onerror = null;
+          }
+        } catch(e) {
+          toast('Playback failed');
+        }
       }
     };
     try { 
@@ -281,14 +343,36 @@ async function nextSong() {
       setBufferingUI(true);
       const data = await API.play(next);
       if (S.song !== next) return; // Guard
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      streamUrl = (isLocal && data.direct_url) || data.stream_url || data.url || data.audio_url || '';
+      streamUrl = (S.skipDirectUrl ? null : data.direct_url) || data.stream_url || data.url || data.audio_url || '';
+      const isDirectUrl = !S.skipDirectUrl && !!data.direct_url;
+      const fallbackUrl = data.stream_url || data.url || data.audio_url || '';
       if (!streamUrl) throw new Error('No stream URL');
       if (data.videoId) next.videoId = data.videoId;
-      setCachedUrl(next, streamUrl, data.videoId||'');
+      setCachedUrl(next, streamUrl, data.videoId||'', fallbackUrl);
+
+      audio.onerror = async () => {
+        audio.onerror = null;
+        if (S.song !== next) return;
+        if (isDirectUrl && fallbackUrl && fallbackUrl !== streamUrl) {
+          S.skipDirectUrl = true;
+          toast('Direct playback failed, retrying with proxy…');
+          try {
+            audio.src = fallbackUrl;
+            await audio.play();
+          } catch(err) {
+            toast('Playback failed: ' + err.message);
+            setBufferingUI(false);
+          }
+        } else {
+          toast('Playback failed');
+          setBufferingUI(false);
+        }
+      };
+
       audio.src = streamUrl;
       await audio.play();
       if (S.song !== next) return; // Guard
+      audio.onerror = null;
     } catch(e) {
       if (S.song !== next) return; // Guard
       console.error(e);

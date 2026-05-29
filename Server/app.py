@@ -33,6 +33,17 @@ from recommendation import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Check if yt-dlp impersonate is supported
+_USE_IMPERSONATE = True
+try:
+    import yt_dlp
+    # Test if impersonate chrome is supported
+    with yt_dlp.YoutubeDL({"impersonate": "chrome", "quiet": True}) as ydl:
+        pass
+except Exception as e:
+    _USE_IMPERSONATE = False
+    logger.warning("yt-dlp impersonate target 'chrome' is not available. Disabling impersonation: %s", e)
+
 app = FastAPI(title="Daydreamin", version="3.0")
 
 
@@ -64,6 +75,15 @@ _STREAM_TTL = 1800  # 30 minutes
 # ── In-memory lyrics cache ──────────────────────────────────────────────────
 _lyrics_cache: dict[str, dict] = {}   # "artist|title" → {syncedLyrics, plainLyrics, timestamp}
 _LYRICS_TTL = 3600  # 1 hour
+
+# ── In-memory recommendation cache ──────────────────────────────────────────
+_rec_cache: dict[str, dict] = {}
+_REC_TTL = 600  # 10 minutes
+
+# ── Thread safety & pending streams for deduplication ───────────────────────
+import threading
+_stream_lock = threading.Lock()
+_pending_streams: dict[str, tuple[threading.Event, dict]] = {}
 
 
 # ── Middleware ──────────────────────────────────────────────────────────────
@@ -379,7 +399,7 @@ def _cache_lyrics(cache_key: str, result: dict) -> dict:
 
 
 # ── Stream URL cache eviction ────────────────────────────────────────────────
-_STREAM_CACHE_MAX = 100  # max entries before LRU eviction
+_STREAM_CACHE_MAX = 500  # max entries before LRU eviction (raised to 500)
 
 
 def _evict_stream_cache():
@@ -400,18 +420,30 @@ def _resolve_stream(query: str, video_id: str = None):
     import traceback as _traceback
 
     cache_key = video_id or query
-    cached = _stream_cache.get(cache_key)
-    if cached and (time.time() - cached["timestamp"]) < _STREAM_TTL:
-        logger.debug("Stream cache hit for key: %s", cache_key)
-        return cached
+
+    with _stream_lock:
+        # Check cache first
+        cached = _stream_cache.get(cache_key)
+        if cached and (time.time() - cached["timestamp"]) < _STREAM_TTL:
+            logger.debug("Stream cache hit for key: %s", cache_key)
+            return cached
+
+        # If already pending, grab the event and holder to wait on
+        if cache_key in _pending_streams:
+            event, holder = _pending_streams[cache_key]
+            is_worker = False
+        else:
+            event = threading.Event()
+            holder = {"result": None}
+            _pending_streams[cache_key] = (event, holder)
+            is_worker = True
+
+    if not is_worker:
+        logger.info("Stream resolution already in-flight for %s. Awaiting...", cache_key)
+        event.wait(timeout=30)  # Safe timeout to prevent hanging forever
+        return holder["result"]
 
     # Build the EXACT same ydl_opts that test_ytdlp_search uses (proven to work on HF Spaces)
-    try:
-        from yt_dlp.networking.impersonate import ImpersonateTarget
-        impersonate_val = ImpersonateTarget.from_str("chrome")
-    except Exception:
-        impersonate_val = "chrome"
-
     ydl_opts = {
         "format": "bestaudio/best",
         "quiet": True,
@@ -420,9 +452,14 @@ def _resolve_stream(query: str, video_id: str = None):
         "socket_timeout": 10,
         "retries": 0,
         "fragment_retries": 0,
-        "impersonate": impersonate_val,
         "source_address": "0.0.0.0",  # Force IPv4 to prevent slow IPv6 DNS/routing timeouts
     }
+    if _USE_IMPERSONATE:
+        try:
+            from yt_dlp.networking.impersonate import ImpersonateTarget
+            ydl_opts["impersonate"] = ImpersonateTarget.from_str("chrome")
+        except Exception:
+            ydl_opts["impersonate"] = "chrome"
     if COOKIE_FILE.exists():
         ydl_opts["cookiefile"] = str(COOKIE_FILE)
 
@@ -447,27 +484,37 @@ def _resolve_stream(query: str, video_id: str = None):
             )
             return None
 
-
     result = None
+    try:
+        # Attempt 1: direct video URL (fast, accurate) — skip if no video_id
+        if video_id:
+            logger.info("Stream attempt 1: direct URL for video_id=%s", video_id)
+            result = _try_extract(f"https://www.youtube.com/watch?v={video_id}")
 
-    # Attempt 1: direct video URL (fast, accurate) — skip if no video_id
-    if video_id:
-        logger.info("Stream attempt 1: direct URL for video_id=%s", video_id)
-        result = _try_extract(f"https://www.youtube.com/watch?v={video_id}")
+        # Attempt 2: ytsearch fallback (or primary when no video_id)
+        if result is None:
+            logger.info("Stream attempt 2: ytsearch for query=%r", query)
+            result = _try_extract(f"ytsearch1:{query}")
 
-    # Attempt 2: ytsearch fallback (or primary when no video_id)
-    if result is None:
-        logger.info("Stream attempt 2: ytsearch for query=%r", query)
-        result = _try_extract(f"ytsearch1:{query}")
+        if result:
+            logger.info("Stream resolved for query=%r, video_id=%r", query, video_id)
+        else:
+            logger.error("All stream resolution attempts failed for query=%r, video_id=%r", query, video_id)
+    finally:
+        with _stream_lock:
+            holder["result"] = result
+            if cache_key in _pending_streams:
+                del _pending_streams[cache_key]
+            if result:
+                _evict_stream_cache()
+                _stream_cache[cache_key] = result
+                # Dual-key cache entries: store under BOTH video_id and query if both exist
+                if video_id and query:
+                    _stream_cache[video_id] = result
+                    _stream_cache[query] = result
+            event.set()
 
-    if result:
-        logger.info("Stream resolved for query=%r, video_id=%r", query, video_id)
-        _evict_stream_cache()
-        _stream_cache[cache_key] = result
-        return result
-
-    logger.error("All stream resolution attempts failed for query=%r, video_id=%r", query, video_id)
-    return None
+    return result
 
 
 
@@ -639,10 +686,29 @@ def build_up_next_response(song_id: str, artist: str = "", title: str = "", limi
     if song_id and len(song_id) == 11 and not song_id.isdigit():
         video_id = song_id
 
+    # Determine recommendation cache key
+    cache_key = video_id if video_id else (f"{artist.lower().strip()}|{title.lower().strip()}" if (artist and title) else None)
+    if cache_key:
+        cached = _rec_cache.get(cache_key)
+        if cached and (time.time() - cached["timestamp"]) < _REC_TTL:
+            logger.info("Recommendation cache HIT: %s", cache_key)
+            return cached["results"]
+
+    # Pre-resolve video_id for iTunes tracks (or when video_id is not present)
+    if not video_id and artist and title:
+        try:
+            video_id = ytmusic_service.resolve_video_id(artist, title) or None
+        except Exception as e:
+            logger.warning("Failed to resolve video_id for recommendation seed: %s", e)
+
     # Try YouTube Music recommendations first
-    tracks = ytmusic_service.get_radio_queue(
-        video_id=video_id, artist=artist, title=title, limit=limit
-    )
+    tracks = []
+    try:
+        tracks = ytmusic_service.get_radio_queue(
+            video_id=video_id, artist=artist, title=title, limit=limit
+        )
+    except Exception as e:
+        logger.warning("Failed to fetch YTMusic radio queue: %s", e)
 
     # Check if seed song is clean (original version)
     seed_clean = True
@@ -652,8 +718,8 @@ def build_up_next_response(song_id: str, artist: str = "", title: str = "", limi
         if any(w in title_lower for w in bad_rec_keywords):
             seed_clean = False
 
+    result = []
     if tracks:
-        result = []
         for t in tracks:
             t_title_lower = t["title"].lower()
             # Filter out unofficial/remix/live tracks if seed song is official
@@ -672,8 +738,44 @@ def build_up_next_response(song_id: str, artist: str = "", title: str = "", limi
         
         # If we filtered too aggressively, fallback to including unfiltered recommendations
         if len(result) < 5:
+            existing_ids = {r["videoId"] for r in result}
             for t in tracks:
-                item = {
+                if t["videoId"] not in existing_ids:
+                    result.append({
+                        "id": t["videoId"],
+                        "videoId": t["videoId"],
+                        "title": t["title"],
+                        "artist": t["artist"],
+                        "cover": t["thumbnail"],
+                        "cover_xl": t["thumbnail"],
+                        "duration": t["duration"],
+                        "reason": "ytmusic",
+                    })
+
+    # Fallback to legacy engine if result is empty
+    if not result:
+        logger.info("YTMusic radio failed or empty, falling back to legacy recommendations for %s", song_id)
+        try:
+            from recommendation import get_up_next as legacy_get_up_next
+            entries = legacy_get_up_next(song_id, limit=limit)
+            songs_by_id = {song["id"]: song for song in get_songs_by_ids([e["song_id"] for e in entries])}
+            for entry in entries:
+                song = songs_by_id.get(entry["song_id"])
+                if song:
+                    item = dict(song)
+                    item["reason"] = entry["reason"]
+                    result.append(item)
+        except Exception as e:
+            logger.warning("Legacy recommendation engine failed: %s", e)
+
+    # Fallback to search-based recommendations if still empty
+    if not result and artist:
+        logger.info("YTMusic radio and legacy fallback failed or empty. Trying search-based fallback for artist: %s", artist)
+        try:
+            search_query = f"{artist} songs"
+            yt_results = ytmusic_service.search_ytmusic(search_query, limit=limit)
+            for t in yt_results:
+                result.append({
                     "id": t["videoId"],
                     "videoId": t["videoId"],
                     "title": t["title"],
@@ -681,28 +783,19 @@ def build_up_next_response(song_id: str, artist: str = "", title: str = "", limi
                     "cover": t["thumbnail"],
                     "cover_xl": t["thumbnail"],
                     "duration": t["duration"],
-                    "reason": "ytmusic",
-                }
-                if item not in result:
-                    result.append(item)
-        return result
+                    "reason": "ytmusic_search_fallback",
+                })
+        except Exception as e:
+            logger.warning("Search-based fallback failed: %s", e)
 
-    # Fallback to legacy engine
-    logger.info("YTMusic radio failed, falling back to legacy recommendations for %s", song_id)
-    try:
-        from recommendation import get_up_next as legacy_get_up_next
-        entries = legacy_get_up_next(song_id, limit=limit)
-        songs_by_id = {song["id"]: song for song in get_songs_by_ids([e["song_id"] for e in entries])}
-        result = []
-        for entry in entries:
-            song = songs_by_id.get(entry["song_id"])
-            if song:
-                item = dict(song)
-                item["reason"] = entry["reason"]
-                result.append(item)
-        return result
-    except Exception:
-        return []
+    # Cache result if found
+    if result and cache_key:
+        _rec_cache[cache_key] = {
+            "results": result,
+            "timestamp": time.time()
+        }
+
+    return result
 
 
 # ── Preload endpoint ────────────────────────────────────────────────────────
@@ -1354,100 +1447,132 @@ def mobile_smart_search(q: str = ""):
         cleaned_query = clean_search_query(search_q)
         candidates = {}
         
-        # 1. iTunes search
-        try:
-            itunes_results = search_songs(cleaned_query)
-            for idx, s in enumerate(itunes_results):
-                key = get_dedup_key(s.get("artist", ""), s.get("title", ""))
-                if not key:
-                    continue
-                candidates[key] = {
-                    "id": s.get("id"),
-                    "videoId": s.get("videoId") or "",
-                    "title": s.get("title"),
-                    "artist": s.get("artist"),
-                    "album": s.get("album", ""),
-                    "cover": s.get("cover", ""),
-                    "cover_xl": s.get("cover_xl", ""),
-                    "duration": s.get("duration", 0),
-                    "genre": s.get("genre", ""),
-                    "source": "itunes",
-                    "itunes_rank": idx,
-                    "yt_rank": 999
-                }
-        except Exception:
-            pass
-
-        # 2. YouTube Music search
-        try:
-            yt_results = ytmusic_service.search_ytmusic(cleaned_query, limit=15)
-            for idx, t in enumerate(yt_results):
-                key = get_dedup_key(t.get("artist", ""), t.get("title", ""))
-                if not key:
-                    continue
-                if key in candidates:
-                    c = candidates[key]
-                    c["videoId"] = t["videoId"]
-                    if not c["cover"] and t["thumbnail"]:
-                        c["cover"] = t["thumbnail"]
-                        c["cover_xl"] = t["thumbnail"]
-                    if not c["duration"] and t["duration"]:
-                        c["duration"] = t["duration"]
-                    c["source"] = "merged"
-                    c["yt_rank"] = idx
-                    c["videoType"] = t.get("videoType", "")
-                else:
-                    candidates[key] = {
-                        "id": t["videoId"],
-                        "videoId": t["videoId"],
-                        "title": t["title"],
-                        "artist": t["artist"],
-                        "album": t.get("album", ""),
-                        "cover": t["thumbnail"],
-                        "cover_xl": t["thumbnail"],
-                        "duration": t["duration"],
-                        "source": "ytmusic",
-                        "itunes_rank": 999,
-                        "yt_rank": idx,
-                        "videoType": t.get("videoType", "")
-                    }
-        except Exception as e:
-            logger.exception("YouTube Music search failed for query %r: %s", cleaned_query, e)
-
-        # 3. LRCLIB search
-        if len(search_q.split()) >= 3:
+        # Helper task for iTunes search
+        def fetch_itunes():
             try:
-                resp = requests.get(
-                    "https://lrclib.net/api/search",
-                    params={"q": search_q},
-                    headers={"User-Agent": "Daydreamin/3.0"},
-                    timeout=5,
-                )
-                data = resp.json()
-                if isinstance(data, list):
-                    for item in data[:6]:
-                        artist = item.get("artistName", "")
-                        title = item.get("trackName", "")
-                        if not artist or not title:
-                            continue
-                        key = get_dedup_key(artist, title)
-                        if key not in candidates:
-                            candidates[key] = {
-                                "id": f"lrc_{item.get('id', '')}",
-                                "videoId": "",
-                                "title": title,
-                                "artist": artist,
-                                "album": item.get("albumName", ""),
-                                "cover": "",
-                                "cover_xl": "",
-                                "duration": item.get("duration", 0),
-                                "source": "lrc",
-                                "itunes_rank": 999,
-                                "yt_rank": 999,
-                                "videoType": ""
-                            }
-            except Exception:
-                pass
+                return search_songs(cleaned_query)
+            except Exception as e:
+                logger.warning("iTunes search thread failed: %s", e)
+                return []
+
+        # Helper task for YouTube Music search
+        def fetch_ytmusic():
+            try:
+                return ytmusic_service.search_ytmusic(cleaned_query, limit=15)
+            except Exception as e:
+                logger.warning("YouTube Music search thread failed: %s", e)
+                return []
+
+        # Helper task for LRCLIB search
+        def fetch_lrclib():
+            if len(search_q.split()) >= 3:
+                try:
+                    resp = requests.get(
+                        "https://lrclib.net/api/search",
+                        params={"q": search_q},
+                        headers={"User-Agent": "Daydreamin/3.0"},
+                        timeout=5,
+                    )
+                    return resp.json()
+                except Exception as e:
+                    logger.warning("LRCLIB search thread failed: %s", e)
+                    return []
+            return []
+
+        # Submit tasks to executor to run in parallel
+        futures = {
+            executor.submit(fetch_itunes): "itunes",
+            executor.submit(fetch_ytmusic): "ytmusic",
+            executor.submit(fetch_lrclib): "lrclib"
+        }
+
+        results = {}
+        for future in futures:
+            provider = futures[future]
+            try:
+                results[provider] = future.result()
+            except Exception as e:
+                logger.warning("Search provider %s raised exception: %s", provider, e)
+                results[provider] = []
+
+        # 1. Process iTunes results
+        itunes_results = results.get("itunes", [])
+        for idx, s in enumerate(itunes_results):
+            key = get_dedup_key(s.get("artist", ""), s.get("title", ""))
+            if not key:
+                continue
+            candidates[key] = {
+                "id": s.get("id"),
+                "videoId": s.get("videoId") or "",
+                "title": s.get("title"),
+                "artist": s.get("artist"),
+                "album": s.get("album", ""),
+                "cover": s.get("cover", ""),
+                "cover_xl": s.get("cover_xl", ""),
+                "duration": s.get("duration", 0),
+                "genre": s.get("genre", ""),
+                "source": "itunes",
+                "itunes_rank": idx,
+                "yt_rank": 999
+            }
+
+        # 2. Process YouTube Music results
+        yt_results = results.get("ytmusic", [])
+        for idx, t in enumerate(yt_results):
+            key = get_dedup_key(t.get("artist", ""), t.get("title", ""))
+            if not key:
+                continue
+            if key in candidates:
+                c = candidates[key]
+                c["videoId"] = t["videoId"]
+                if not c["cover"] and t["thumbnail"]:
+                    c["cover"] = t["thumbnail"]
+                    c["cover_xl"] = t["thumbnail"]
+                if not c["duration"] and t["duration"]:
+                    c["duration"] = t["duration"]
+                c["source"] = "merged"
+                c["yt_rank"] = idx
+                c["videoType"] = t.get("videoType", "")
+            else:
+                candidates[key] = {
+                    "id": t["videoId"],
+                    "videoId": t["videoId"],
+                    "title": t["title"],
+                    "artist": t["artist"],
+                    "album": t.get("album", ""),
+                    "cover": t["thumbnail"],
+                    "cover_xl": t["thumbnail"],
+                    "duration": t["duration"],
+                    "source": "ytmusic",
+                    "itunes_rank": 999,
+                    "yt_rank": idx,
+                    "videoType": t.get("videoType", "")
+                }
+
+        # 3. Process LRCLIB results
+        lrc_data = results.get("lrclib", [])
+        if isinstance(lrc_data, list):
+            for item in lrc_data[:6]:
+                artist = item.get("artistName", "")
+                title = item.get("trackName", "")
+                if not artist or not title:
+                    continue
+                key = get_dedup_key(artist, title)
+                if key not in candidates:
+                    candidates[key] = {
+                        "id": f"lrc_{item.get('id', '')}",
+                        "videoId": "",
+                        "title": title,
+                        "artist": artist,
+                        "album": item.get("albumName", ""),
+                        "cover": "",
+                        "cover_xl": "",
+                        "duration": item.get("duration", 0),
+                        "source": "lrc",
+                        "itunes_rank": 999,
+                        "yt_rank": 999,
+                        "videoType": ""
+                    }
 
         # Rank
         scored = []
@@ -1650,12 +1775,6 @@ def test_ytdlp(url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
     t0 = time.time()
     try:
         import yt_dlp
-        try:
-            from yt_dlp.networking.impersonate import ImpersonateTarget
-            impersonate_val = ImpersonateTarget.from_str("chrome")
-        except Exception:
-            impersonate_val = "chrome"
-
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
@@ -1664,7 +1783,6 @@ def test_ytdlp(url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
             "socket_timeout": 10,
             "retries": 0,
             "fragment_retries": 0,
-            "impersonate": impersonate_val,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
             "extractor_args": {
@@ -1673,6 +1791,12 @@ def test_ytdlp(url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
                 }
             },
         }
+        if _USE_IMPERSONATE:
+            try:
+                from yt_dlp.networking.impersonate import ImpersonateTarget
+                ydl_opts["impersonate"] = ImpersonateTarget.from_str("chrome")
+            except Exception:
+                ydl_opts["impersonate"] = "chrome"
         if COOKIE_FILE.exists():
             ydl_opts["cookiefile"] = str(COOKIE_FILE)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1689,12 +1813,6 @@ def test_ytdlp_search(q: str = "Anirudh Ravichander Raga of Revenge"):
     t0 = time.time()
     try:
         import yt_dlp
-        try:
-            from yt_dlp.networking.impersonate import ImpersonateTarget
-            impersonate_val = ImpersonateTarget.from_str("chrome")
-        except Exception:
-            impersonate_val = "chrome"
-
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
@@ -1703,7 +1821,6 @@ def test_ytdlp_search(q: str = "Anirudh Ravichander Raga of Revenge"):
             "socket_timeout": 10,
             "retries": 0,
             "fragment_retries": 0,
-            "impersonate": impersonate_val,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
             "extractor_args": {
@@ -1712,6 +1829,12 @@ def test_ytdlp_search(q: str = "Anirudh Ravichander Raga of Revenge"):
                 }
             },
         }
+        if _USE_IMPERSONATE:
+            try:
+                from yt_dlp.networking.impersonate import ImpersonateTarget
+                ydl_opts["impersonate"] = ImpersonateTarget.from_str("chrome")
+            except Exception:
+                ydl_opts["impersonate"] = "chrome"
         if COOKIE_FILE.exists():
             ydl_opts["cookiefile"] = str(COOKIE_FILE)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1729,12 +1852,6 @@ def debug_resolve(q: str = "", video_id: str = ""):
     t0 = time.time()
     try:
         import yt_dlp
-        try:
-            from yt_dlp.networking.impersonate import ImpersonateTarget
-            impersonate_val = ImpersonateTarget.from_str("chrome")
-        except Exception:
-            impersonate_val = "chrome"
-
         ydl_opts = {
             "format": "bestaudio/best",
             "quiet": True,
@@ -1743,7 +1860,6 @@ def debug_resolve(q: str = "", video_id: str = ""):
             "socket_timeout": 10,
             "retries": 0,
             "fragment_retries": 0,
-            "impersonate": impersonate_val,
             "js_runtimes": {"node": {}},
             "remote_components": ["ejs:github"],
             "extractor_args": {
@@ -1752,6 +1868,12 @@ def debug_resolve(q: str = "", video_id: str = ""):
                 }
             },
         }
+        if _USE_IMPERSONATE:
+            try:
+                from yt_dlp.networking.impersonate import ImpersonateTarget
+                ydl_opts["impersonate"] = ImpersonateTarget.from_str("chrome")
+            except Exception:
+                ydl_opts["impersonate"] = "chrome"
         if COOKIE_FILE.exists():
             ydl_opts["cookiefile"] = str(COOKIE_FILE)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
