@@ -377,22 +377,47 @@ function toggleShortcuts() {
 document.addEventListener('DOMContentLoaded', async () => {
   switchTab('home');
 
-  // Resolve dynamic Cloudflare Tunnel URL via anonymous key-value registry on startup
+  // Resolve dynamic Cloudflare Tunnel URL via jsonblob registry on startup (with fallback)
   try {
     const host = window.location.hostname;
     const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
     if (!isLocal && !localStorage.getItem('dyd_url')) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (r.ok) {
-        const raw = await r.text();
-        const subdomain = raw.replace(/"/g, '').trim();
-        if (subdomain && subdomain !== 'null' && subdomain !== 'None') {
-          S.url = `https://${subdomain}.trycloudflare.com`;
-          console.log("Resolved backend tunnel URL from registry:", S.url);
+
+      let subdomain = null;
+
+      // 1. Primary: jsonblob registry (Native CORS: *)
+      try {
+        const r = await fetch('https://jsonblob.com/api/jsonBlob/019fcb2b-a88e-752e-80c9-993df7907028', { signal: controller.signal });
+        if (r.ok) {
+          const data = await r.json();
+          if (data && data.subdomain) {
+            subdomain = String(data.subdomain).trim();
+          }
         }
+      } catch(err) {
+        console.warn("Primary jsonblob registry fetch failed, trying fallback...", err);
+      }
+
+      // 2. Backup: CORS proxy wrapping keyvalue store
+      if (!subdomain || subdomain === 'null' || subdomain === 'None') {
+        try {
+          const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain'), { signal: controller.signal });
+          if (r.ok) {
+            const raw = await r.text();
+            subdomain = raw.replace(/"/g, '').trim();
+          }
+        } catch(err) {
+          console.warn("Fallback registry fetch failed:", err);
+        }
+      }
+
+      clearTimeout(timeoutId);
+
+      if (subdomain && subdomain !== 'null' && subdomain !== 'None') {
+        S.url = `https://${subdomain}.trycloudflare.com`;
+        console.log("Resolved backend tunnel URL from registry:", S.url);
       }
     }
   } catch(e) {

@@ -114,20 +114,31 @@ def register_tunnel_url(url):
     except Exception as e:
         logger.warning("Failed to save tunnel URL locally: %s", e)
 
-    # Extract subdomain for keyvalue.immanuel.co registration
+    # Extract subdomain for registry registration
     import re
     match = re.search(r"https://([a-zA-Z0-9\-]+)\.trycloudflare\.com", url)
     if match:
         subdomain = match.group(1)
+        
+        # Primary: jsonblob.com (Native CORS support)
+        blob_url = "https://jsonblob.com/api/jsonBlob/019fcb2b-a88e-752e-80c9-993df7907028"
+        try:
+            r = requests.put(blob_url, json={"subdomain": subdomain}, headers={"Content-Type": "application/json"}, timeout=10)
+            if r.status_code == 200:
+                logger.info("Successfully registered tunnel subdomain %s on jsonblob.com!", subdomain)
+            else:
+                logger.warning("Failed to register tunnel subdomain on jsonblob.com: %d %s", r.status_code, r.text)
+        except Exception as e:
+            logger.warning("Failed to contact jsonblob.com: %s", e)
+
+        # Backup: keyvalue.immanuel.co
         kv_url = f"https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/9bo6g73h/tunnel_subdomain/{subdomain}"
         try:
             r = requests.post(kv_url, timeout=10)
             if r.status_code == 200:
                 logger.info("Successfully registered tunnel subdomain %s on keyvalue.immanuel.co!", subdomain)
-            else:
-                logger.warning("Failed to register tunnel subdomain on keyvalue.immanuel.co: %d %s", r.status_code, r.text)
-        except Exception as e:
-            logger.warning("Failed to contact keyvalue.immanuel.co: %s", e)
+        except Exception:
+            pass
     else:
         logger.warning("Could not extract subdomain from tunnel URL: %s", url)
 
