@@ -90,7 +90,7 @@ const S = {
   rpTab:    'queue',
   songs:    { ..._savedLikedSongs },
   counter:  0,
-  skipDirectUrl: false,
+  skipDirectUrl: true,
 };
 
 let playlists = JSON.parse(localStorage.getItem('dyd_playlists') || '[]');

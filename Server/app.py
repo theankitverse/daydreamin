@@ -598,7 +598,8 @@ def build_proxy_response(url: str, incoming_headers, headers_json: str):
         excluded_headers = {
             "content-encoding",
             "transfer-encoding",
-            "connection"
+            "connection",
+            "content-type"
         }
 
         response_headers = {
@@ -608,11 +609,12 @@ def build_proxy_response(url: str, incoming_headers, headers_json: str):
         }
 
         response_headers["Accept-Ranges"] = "bytes"
+        content_type = req.headers.get("content-type") or "audio/mpeg"
 
         return StreamingResponse(
             req.iter_content(chunk_size=1024 * 256),
             status_code=req.status_code,
-            media_type="audio/mp4",
+            media_type=content_type,
             headers=response_headers,
         )
 
