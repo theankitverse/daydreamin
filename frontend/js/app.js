@@ -59,38 +59,41 @@ function reg(song) {
 }
 let _tunnelResolvePromise = null;
 
-async function ensureBackendUrl() {
+async function resolveTunnelSubdomain(forceFresh = false) {
   const host = window.location.hostname;
   const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
   if (isLocal) return S.url;
-  if (S.url && !S.url.includes('trycloudflare.com')) return S.url; // Custom user URL set
 
-  if (_tunnelResolvePromise) return _tunnelResolvePromise;
+  if (_tunnelResolvePromise && !forceFresh) return _tunnelResolvePromise;
 
   _tunnelResolvePromise = (async () => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
       let subdomain = null;
 
       try {
-        const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain', { signal: controller.signal });
+        const cacheBuster = forceFresh ? '?_t=' + Date.now() : '';
+        const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain' + cacheBuster, { signal: controller.signal });
         if (r.ok) {
           const raw = await r.text();
           subdomain = raw.replace(/"/g, '').trim();
         }
       } catch(err) {
-        console.warn("Primary keyvalue registry fetch failed:", err);
+        console.warn("Keyvalue registry fetch failed:", err);
       }
 
       clearTimeout(timeoutId);
 
       if (subdomain && subdomain !== 'null' && subdomain !== 'None') {
         S.url = `https://${subdomain}.trycloudflare.com`;
-        console.log("Resolved backend tunnel URL from registry:", S.url);
+        localStorage.setItem('dyd_url', S.url);
+        console.log("Resolved dynamic backend URL from registry:", S.url);
       }
     } catch(e) {
       console.warn("Failed to resolve dynamic backend URL:", S.url, e);
+    } finally {
+      _tunnelResolvePromise = null;
     }
     return S.url;
   })();
@@ -99,10 +102,31 @@ async function ensureBackendUrl() {
 }
 
 async function apiFetch(path, options = {}) {
-  await ensureBackendUrl();
-  const r = await fetch(S.url + path, options);
-  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
-  return r.json();
+  const host = window.location.hostname;
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
+
+  if (!isLocal && (!S.url || S.url.includes('trycloudflare.com'))) {
+    await resolveTunnelSubdomain(false);
+  }
+
+  try {
+    const r = await fetch(S.url + path, options);
+    if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+    return await r.json();
+  } catch(err) {
+    if (!isLocal && err.name !== 'AbortError') {
+      console.warn("API request failed on current server URL, re-checking dynamic tunnel registry...", err);
+      const oldUrl = S.url;
+      const freshUrl = await resolveTunnelSubdomain(true);
+      if (freshUrl && freshUrl !== oldUrl) {
+        console.log("Retrying API request with new backend URL:", freshUrl);
+        const r2 = await fetch(S.url + path, options);
+        if (!r2.ok) throw new Error(r2.status + ' ' + r2.statusText);
+        return await r2.json();
+      }
+    }
+    throw err;
+  }
 }
 
 const API = {
@@ -416,6 +440,6 @@ function toggleShortcuts() {
 // ═══════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
   switchTab('home');
-  await ensureBackendUrl();
+  await resolveTunnelSubdomain();
   loadHomeFeeds();
 });
