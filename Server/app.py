@@ -148,40 +148,24 @@ def register_tunnel_url(url):
 
 def watch_tunnel_log():
     log_file = DATA_DIR / "cloudflared.log"
-    # Wait for the log file to be created
-    for _ in range(30):
-        if log_file.exists():
-            break
-        time.sleep(0.5)
-    else:
-        logger.warning("Cloudflare log file not found after 15 seconds.")
-        return
-
-    logger.info("Watching cloudflared.log for tunnel URL...")
     import re
     url_pattern = re.compile(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com")
-    
-    with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-        # First read any existing content (fast catch)
-        content = f.read()
-        match = url_pattern.search(content)
-        if match:
-            url = match.group(0)
-            register_tunnel_url(url)
-            return
 
-        # If not found yet, poll/follow the file for updates
-        for _ in range(60):
-            line = f.readline()
-            if not line:
-                time.sleep(0.5)
-                continue
-            match = url_pattern.search(line)
-            if match:
-                url = match.group(0)
-                register_tunnel_url(url)
-                return
-    logger.warning("Cloudflare Tunnel URL not found in log file after 30 seconds.")
+    logger.info("Watching cloudflared.log for tunnel URL...")
+    for _ in range(120):  # poll up to 60 seconds (120 * 0.5s)
+        if log_file.exists():
+            try:
+                content = log_file.read_text(encoding="utf-8", errors="ignore")
+                match = url_pattern.search(content)
+                if match:
+                    url = match.group(0)
+                    register_tunnel_url(url)
+                    return
+            except Exception as e:
+                logger.warning("Error reading cloudflared.log: %s", e)
+        time.sleep(0.5)
+
+    logger.warning("Cloudflare Tunnel URL not found in log file after 60 seconds.")
 
 
 # ── Cache helpers ───────────────────────────────────────────────────────────
