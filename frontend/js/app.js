@@ -387,17 +387,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       let subdomain = null;
 
-      // 1. Primary: jsonblob registry (Native CORS: *)
+      // 1. Primary: Direct keyvalue store (Native CORS supported)
       try {
-        const r = await fetch('https://jsonblob.com/api/jsonBlob/019fcb2b-a88e-752e-80c9-993df7907028', { signal: controller.signal });
+        const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain', { signal: controller.signal });
         if (r.ok) {
-          const data = await r.json();
-          if (data && data.subdomain) {
-            subdomain = String(data.subdomain).trim();
-          }
+          const raw = await r.text();
+          subdomain = raw.replace(/"/g, '').trim();
         }
       } catch(err) {
-        console.warn("Primary jsonblob registry fetch failed, trying fallback...", err);
+        console.warn("Primary keyvalue registry fetch failed, trying fallback...", err);
       }
 
       // 2. Backup: CORS proxy wrapping keyvalue store
