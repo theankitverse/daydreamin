@@ -103,6 +103,12 @@ const _preloadRegister = (song) => {
   S.songs[id] = song;
 };
 
+function getSong(id) {
+  if (!id) return null;
+  if (typeof id === 'object') return id;
+  return S.songs[id] || null;
+}
+
 // Ensure all initially loaded liked songs have their _rid property set
 for (let id in _savedLikedSongs) {
   const song = _savedLikedSongs[id];
