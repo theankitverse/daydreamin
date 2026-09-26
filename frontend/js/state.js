@@ -53,28 +53,22 @@ localStorage.setItem('dyd_liked_songs', JSON.stringify(_migratedLikedSongs));
 const _savedLikedSongs = _migratedLikedSongs;
 const _savedHistory = JSON.parse(localStorage.getItem('dyd_history') || '[]');
 
-// Smart backend URL: localhost for dev, Oracle Cloud for production
+// Smart backend URL: localhost for dev, resolved dynamically via keyvalue store for production
 function getDefaultBackendUrl() {
   const host = window.location.hostname;
   if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
     return 'http://127.0.0.1:499';
   }
-  // Production: point to your Cloudflare Tunnel backend
-  return 'https://moisture-antenna-poly-property.trycloudflare.com';
+  return '';
 }
 
 // Auto-migration: if in production (Vercel) but local storage has localhost URL, clear it!
-// Also clear any trycloudflare.com URL from local storage to ensure the dynamic URL registry takes precedence on page load.
 const _storedUrl = localStorage.getItem('dyd_url');
 const _host = window.location.hostname;
 const _isLocal = _host === 'localhost' || _host === '127.0.0.1' || _host.startsWith('192.168.');
 if (!_isLocal && _storedUrl && (_storedUrl.includes('127.0.0.1') || _storedUrl.includes('localhost') || _storedUrl.includes(':499'))) {
   localStorage.removeItem('dyd_url');
 }
-if (_storedUrl && _storedUrl.includes('trycloudflare.com')) {
-  localStorage.removeItem('dyd_url');
-}
-
 
 const S = {
   url:      localStorage.getItem('dyd_url') || getDefaultBackendUrl(),

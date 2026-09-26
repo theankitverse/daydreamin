@@ -57,9 +57,49 @@ function reg(song) {
   S.songs[id] = song;
   return id;
 }
-function getSong(rid) { return S.songs[rid]; }
+let _tunnelResolvePromise = null;
+
+async function ensureBackendUrl() {
+  const host = window.location.hostname;
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
+  if (isLocal) return S.url;
+  if (S.url && !S.url.includes('trycloudflare.com')) return S.url; // Custom user URL set
+
+  if (_tunnelResolvePromise) return _tunnelResolvePromise;
+
+  _tunnelResolvePromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      let subdomain = null;
+
+      try {
+        const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain', { signal: controller.signal });
+        if (r.ok) {
+          const raw = await r.text();
+          subdomain = raw.replace(/"/g, '').trim();
+        }
+      } catch(err) {
+        console.warn("Primary keyvalue registry fetch failed:", err);
+      }
+
+      clearTimeout(timeoutId);
+
+      if (subdomain && subdomain !== 'null' && subdomain !== 'None') {
+        S.url = `https://${subdomain}.trycloudflare.com`;
+        console.log("Resolved backend tunnel URL from registry:", S.url);
+      }
+    } catch(e) {
+      console.warn("Failed to resolve dynamic backend URL:", S.url, e);
+    }
+    return S.url;
+  })();
+
+  return _tunnelResolvePromise;
+}
 
 async function apiFetch(path, options = {}) {
+  await ensureBackendUrl();
   const r = await fetch(S.url + path, options);
   if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
   return r.json();
@@ -376,51 +416,6 @@ function toggleShortcuts() {
 // ═══════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
   switchTab('home');
-
-  // Resolve dynamic Cloudflare Tunnel URL via jsonblob registry on startup (with fallback)
-  try {
-    const host = window.location.hostname;
-    const isLocal = host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.');
-    if (!isLocal && !localStorage.getItem('dyd_url')) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      let subdomain = null;
-
-      // 1. Primary: Direct keyvalue store (Native CORS supported)
-      try {
-        const r = await fetch('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain', { signal: controller.signal });
-        if (r.ok) {
-          const raw = await r.text();
-          subdomain = raw.replace(/"/g, '').trim();
-        }
-      } catch(err) {
-        console.warn("Primary keyvalue registry fetch failed, trying fallback...", err);
-      }
-
-      // 2. Backup: CORS proxy wrapping keyvalue store
-      if (!subdomain || subdomain === 'null' || subdomain === 'None') {
-        try {
-          const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent('https://keyvalue.immanuel.co/api/KeyVal/GetValue/9bo6g73h/tunnel_subdomain'), { signal: controller.signal });
-          if (r.ok) {
-            const raw = await r.text();
-            subdomain = raw.replace(/"/g, '').trim();
-          }
-        } catch(err) {
-          console.warn("Fallback registry fetch failed:", err);
-        }
-      }
-
-      clearTimeout(timeoutId);
-
-      if (subdomain && subdomain !== 'null' && subdomain !== 'None') {
-        S.url = `https://${subdomain}.trycloudflare.com`;
-        console.log("Resolved backend tunnel URL from registry:", S.url);
-      }
-    }
-  } catch(e) {
-    console.warn("Failed to resolve dynamic backend URL, falling back to default:", S.url, e);
-  }
-
+  await ensureBackendUrl();
   loadHomeFeeds();
 });
