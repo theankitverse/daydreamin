@@ -541,7 +541,7 @@ def render_play_response(request: Request, song_id: str, artist: str, title: str
         )
 
     base_url = str(request.base_url).rstrip("/")
-    proxy_url = f"{base_url}/api/mobile/stream_proxy?url={quote(stream['url'])}&headers={quote(json.dumps(stream['headers']))}"
+    proxy_url = f"{base_url}/api/mobile/stream_proxy?url={quote(stream['url'])}&headers={quote(json.dumps(stream['headers']))}&artist={quote(artist)}&title={quote(title)}&videoId={quote(video_id or '')}"
 
     return JSONResponse({
         "source": "youtube",
@@ -553,7 +553,7 @@ def render_play_response(request: Request, song_id: str, artist: str, title: str
     })
 
 
-def build_proxy_response(url: str, incoming_headers, headers_json: str):
+def build_proxy_response(url: str, incoming_headers, headers_json: str, artist: str = "", title: str = "", video_id: str = ""):
 
     try:
 
@@ -585,6 +585,19 @@ def build_proxy_response(url: str, incoming_headers, headers_json: str):
             headers=headers,
             timeout=30,
         )
+
+        # Self-healing fallback if YouTube returned 403 Forbidden or 404 Not Found
+        if req.status_code in (403, 404) and (artist or title or video_id):
+            logger.warning("Stream proxy received %s. Auto-refreshing stream for: %s - %s...", req.status_code, artist, title)
+            query = f"{artist} {title} official audio".strip()
+            cache_key = video_id or query
+            with _stream_lock:
+                if cache_key in _stream_cache:
+                    del _stream_cache[cache_key]
+            fresh = _resolve_stream(query, video_id=video_id or None)
+            if fresh and fresh.get("url") and fresh["url"] != url:
+                req = requests.get(fresh["url"], stream=True, headers=headers, timeout=30)
+                logger.info("Auto-refreshed stream proxy status: %s", req.status_code)
 
         logger.info("Stream proxy status: %s for range: %s", req.status_code, headers.get("Range"))
 
@@ -1951,10 +1964,10 @@ def mobile_stream_cache(filename: str):
 
 
 @app.get("/api/mobile/stream_proxy")
-def mobile_stream_proxy(request: Request, url: str = "", headers: str = "{}"):
+def mobile_stream_proxy(request: Request, url: str = "", headers: str = "{}", artist: str = "", title: str = "", videoId: str = ""):
     if not url:
         return PlainTextResponse("No URL", status_code=400)
-    return build_proxy_response(url, request.headers, headers)
+    return build_proxy_response(url, request.headers, headers, artist=artist, title=title, video_id=videoId)
 
 
 @app.post("/api/mobile/cache_song")
