@@ -439,6 +439,8 @@ def _resolve_stream(query: str, video_id: str = None):
         "retries": 0,
         "fragment_retries": 0,
         "source_address": "0.0.0.0",  # Force IPv4 to prevent slow IPv6 DNS/routing timeouts
+        "js_runtimes": {"node": {}},
+        "extractor_args": {"youtube": {"player_client": ["mweb", "android", "ios"]}},
     }
     if _USE_IMPERSONATE:
         try:
@@ -560,29 +562,20 @@ def build_proxy_response(url: str, incoming_headers, headers_json: str):
         except Exception:
             yt_headers = {}
 
+        ua = (
+            yt_headers.get("User-Agent")
+            or yt_headers.get("user-agent")
+            or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+
         headers = {
-            "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36",
-
-            "Accept":
-                "*/*",
-
-            "Accept-Language":
-                "en-US,en;q=0.9",
-
-            "Referer":
-                "https://music.youtube.com/",
-
-            "Origin":
-                "https://music.youtube.com/",
+            "User-Agent": ua,
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://music.youtube.com/",
         }
 
-        # Preserve yt-dlp headers
-        headers.update(yt_headers)
-
-        # Preserve seeking
+        # Preserve seeking range header
         if "range" in incoming_headers:
             headers["Range"] = incoming_headers["range"]
 
@@ -593,7 +586,7 @@ def build_proxy_response(url: str, incoming_headers, headers_json: str):
             timeout=30,
         )
 
-        logger.info("Stream proxy status: %s", req.status_code)
+        logger.info("Stream proxy status: %s for range: %s", req.status_code, headers.get("Range"))
 
         excluded_headers = {
             "content-encoding",
